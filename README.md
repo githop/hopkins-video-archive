@@ -6,17 +6,17 @@ A unified semantic intelligence platform for personal video archives. This proje
 
 The system is composed of three primary layers that work together to provide a seamless semantic search and interrogation experience for high-volume video data.
 
-### 1. Data Processing (`projects/whisper-project`)
+### 1. [Data Processing](./projects/whisper-project/README.md) (`projects/whisper-project`)
 - **Technology:** Python, WhisperX, Bun (TS)
 - **Function:** Handles the automated extraction of audio from video files and generates high-fidelity transcripts using WhisperX. It ensures temporal alignment of the text to the video for precise retrieval.
 
-### 2. Inference Infrastructure (`projects/gnarlyvllm`)
+### 2. [Inference Infrastructure](./projects/gnarlyvllm/README.md) (`projects/gnarlyvllm`)
 - **Technology:** Docker, vLLM, LiteLLM, XState, React, openTUI
 - **Function:** A specialized Terminal User Interface (TUI) application built with **openTUI** (the same terminal library used by opencode) that orchestrates containerized **vLLM** instances. It uses State Machines to manage the lifecycle of GPU-accelerated containers and provides an OpenAI-compatible API via a **LiteLLM** proxy, supporting:
   - **Generation:** Qwen 3 (4B Thinking / 4B AWQ)
   - **Embeddings:** Qwen 3 (4B Embedding)
 
-### 3. Intelligence Layer (`projects/hop-hv-rag`)
+### 3. [Intelligence Layer](./projects/hop-hv-rag/README.md) (`projects/hop-hv-rag`)
 - **Technology:** Bun, SQLite, Vector Search
 - **Function:** The "brain" of the archive. It consumes transcripts from the processing layer, generates semantic embeddings via the inference layer, and indexes them into a hybrid SQLite database. It features:
   - Custom ingestion pipeline for retrieval.
