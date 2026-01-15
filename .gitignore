@@ -1,0 +1,55 @@
+# --- INFRASTRUCTURE ---
+node_modules/
+dist/
+out/
+*.tgz
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.lockb
+pids/
+*.pid
+*.seed
+*.pid.lock
+.tmp/
+
+# --- ENVIRONMENT & SECRETS ---
+.env
+.env.*
+**/credentials.json
+**/token.json
+**/client_secrets.json
+
+# --- DATABASES & CACHES ---
+*.db
+*.db-journal
+*.db.bak
+.cache/
+.eslintcache
+*.tsbuildinfo
+__pycache__/
+.venv/
+
+# --- DATA & PRIVACY (BLACKHOLE) ---
+# These rules ensure your family data and registries never leave your local machine.
+
+# whisper-project artifacts
+projects/whisper-project/videos/
+projects/whisper-project/transcripts/
+projects/whisper-project/temp_audio/
+projects/whisper-project/mapping.json
+
+# hop-hv-rag artifacts
+projects/hop-hv-rag/data/
+projects/hop-hv-rag/mapping.json
+projects/hop-hv-rag/eval-results.md
+
+# General data rules
+**/transcripts/
+**/data/*.json
+**/mapping.json
+!**/package.json
+!**/tsconfig.json
+!**/pyproject.toml

@@ -1,0 +1,12 @@
+[project]
+name = "whisper-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "whisperx",
+]
+
+[tool.uv.sources]
+whisperx = { git = "https://github.com/m-bain/whisperX.git" }

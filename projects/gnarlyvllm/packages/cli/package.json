@@ -1,0 +1,21 @@
+{
+  "name": "@gnarlyvllm/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "gnarlyvllm": "./src/main.tsx"
+  },
+  "scripts": {
+    "dev": "bun run ./src/main.tsx",
+    "build": "bun build ./src/main.tsx --outdir ./dist --target bun",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@gnarlyvllm/core": "workspace:*",
+    "@opentui/core": "^0.1.0",
+    "@opentui/react": "^0.1.0",
+    "@xstate/react": "^6.0.0",
+    "react": "^19.0.0",
+    "xstate": "^5.25.0"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext"],
+    "types": ["@types/bun"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "allowImportingTsExtensions": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "@opentui/react"
+  },
+  "include": ["packages/*/src/**/*"],
+  "exclude": ["node_modules", "**/dist"]
+}

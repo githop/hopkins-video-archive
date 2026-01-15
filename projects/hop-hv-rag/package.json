@@ -1,0 +1,34 @@
+{
+  "name": "hop-hv-rag",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "ingest:seed": "bun --filter @hop-hv-rag/ingest seed",
+    "ingest:summarize": "bun --filter @hop-hv-rag/ingest summarize",
+    "ingest:init-db": "bun --filter @hop-hv-rag/ingest init-db",
+    "ingest:init-vec": "bun --filter @hop-hv-rag/ingest init-vec",
+    "ingest:embed": "bun --filter @hop-hv-rag/ingest embed",
+    "ingest:verify": "bun --filter @hop-hv-rag/ingest verify",
+    "ingest:verify-scenes": "bun --filter @hop-hv-rag/ingest verify-scenes",
+    "ingest:cluster-participants": "bun --filter @hop-hv-rag/ingest cluster-participants",
+    "ingest:migrate-participants": "bun --filter @hop-hv-rag/ingest migrate-participants",
+    "ingest:cluster-locations": "bun --filter @hop-hv-rag/ingest cluster-locations",
+    "ingest:migrate-locations": "bun --filter @hop-hv-rag/ingest migrate-locations",
+    "ingest:reset": "rm -f data/hv-rag.db && bun run ingest:init-db && bun run ingest:init-vec && bun run ingest:seed",
+    "search:rag": "bun --cwd packages/search rag",
+    "search:eval": "bun --cwd packages/search run-eval.ts",
+    "typecheck": "tsc --noEmit",
+    "format": "bun prettier . --write",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "prettier": "3.7.4",
+    "typescript": "^5.7.0"
+  },
+  "prettier": {
+    "singleQuote": true
+  }
+}

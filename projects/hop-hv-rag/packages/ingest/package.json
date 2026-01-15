@@ -1,0 +1,26 @@
+{
+  "name": "@hop-hv-rag/ingest",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "seed": "bun src/seed-metadata.ts",
+    "summarize": "bun src/summarize-scenes.ts",
+    "init-db": "bun src/init-db.ts",
+    "init-vec": "bun src/init-vec.ts",
+    "embed": "bun src/embed-scenes.ts",
+    "verify": "bun src/verify-metadata.ts",
+    "verify-scenes": "bun src/verify-scenes.ts",
+    "cluster-participants": "bun src/cluster-participants.ts",
+    "migrate-participants": "bun src/migrate-participants.ts",
+    "cluster-locations": "bun src/cluster-locations.ts",
+    "migrate-locations": "bun src/migrate-locations.ts",
+    "test-meta": "bun src/test-meta.ts"
+  },
+  "dependencies": {
+    "@hop-hv-rag/db": "workspace:*",
+    "@hop-hv-rag/core": "workspace:*",
+    "@hop-hv-rag/ai": "workspace:*",
+    "drizzle-orm": "latest",
+    "zod": "latest"
+  }
+}

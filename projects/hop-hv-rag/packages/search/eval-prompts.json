@@ -1,0 +1,50 @@
+[
+  {
+    "id": "EVAL-001",
+    "category": "Entity + Location Boosting",
+    "prompt": "What was Greg doing in the living room?",
+    "expected": "Should mention Greg in the Living Room (the most frequent entity/location pair). Check if boosting triggered."
+  },
+  {
+    "id": "EVAL-002",
+    "category": "Keyword + Date Accuracy",
+    "prompt": "Tell me about the big snow storm in January 1996.",
+    "expected": "Should find the scene from 1996-1.json mentioning 14 inches of snow on January 8th."
+  },
+  {
+    "id": "EVAL-003",
+    "category": "Semantic Typo Correction",
+    "prompt": "Show me the 'Hang On Sloopy' performance.",
+    "expected": "Should match the performance in 2003.json even though the transcript says 'Hang On Sleepy'."
+  },
+  {
+    "id": "EVAL-004",
+    "category": "Multi-Entity Intersection",
+    "prompt": "Find clips with both Karen and Peggy.",
+    "expected": "Should retrieve scenes where both people are tagged in the junction tables."
+  },
+  {
+    "id": "EVAL-005",
+    "category": "Specific Topic Retrieval",
+    "prompt": "Who mentions being a defensive tackle?",
+    "expected": "Should identify Darion Scott in the 2003.json video."
+  },
+  {
+    "id": "EVAL-006",
+    "category": "Temporal Summary",
+    "prompt": "What were the highlights from 2003?",
+    "expected": "Should synthesize events from 2003.json and other 2003 tapes."
+  },
+  {
+    "id": "EVAL-007",
+    "category": "Strict Context (Negative Test)",
+    "prompt": "How do I bake a chocolate cake?",
+    "expected": "Should state that this information is not in the archive."
+  },
+  {
+    "id": "EVAL-008",
+    "category": "Short Phrase Match",
+    "prompt": "Who said 'Let's go' in 2003?",
+    "expected": "Should find the 'Departure Prompt' scene in 2003.json."
+  }
+]

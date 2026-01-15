@@ -1,0 +1,25 @@
+{
+  "name": "gnarlyvllm",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "gnarlyvllm": "bun ./packages/cli/src/main.tsx",
+    "dev": "bun run ./packages/cli/src/main.tsx",
+    "build": "bun run --filter '*' build",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "format": "bun prettier . --write"
+  },
+  "devDependencies": {
+    "@gnarlyvllm/cli": "workspace:*",
+    "@types/bun": "latest",
+    "@types/react": "^19.0.0",
+    "prettier": "3.7.4",
+    "typescript": "^5.7.0"
+  },
+  "prettier": {
+    "singleQuote": true
+  }
+}

@@ -1,0 +1,149 @@
+import {
+  sqliteTable,
+  text,
+  integer,
+  real,
+  primaryKey,
+} from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+
+// 1. VIDEOS
+export const videos = sqliteTable('videos', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  driveFileId: text('drive_file_id').notNull().unique(),
+  filename: text('filename').notNull(),
+  title: text('title'),
+  recordedAt: text('recorded_at'),
+  year: integer('year'),
+  globalSummary: text('global_summary'),
+  participants: text('participants'), // JSON array
+  locations: text('locations'), // JSON array
+  createdAt: text('created_at').default(sql`(CURRENT_TIMESTAMP)`),
+});
+
+// 2. TRANSCRIPTS
+export const transcripts = sqliteTable('transcripts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  videoId: integer('video_id')
+    .references(() => videos.id)
+    .notNull(),
+  startTime: real('start_time').notNull(),
+  endTime: real('end_time').notNull(),
+  text: text('text').notNull(),
+});
+
+// 3. SCENES (Programmatic chunks with narrative summaries)
+export const scenes = sqliteTable('scenes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  videoId: integer('video_id')
+    .references(() => videos.id)
+    .notNull(),
+  startTime: real('start_time').notNull(),
+  endTime: real('end_time').notNull(),
+  title: text('title'),
+  summary: text('summary').notNull(),
+  transcript: text('transcript'), // The raw text for this chunk
+  participants: text('participants'), // JSON array
+  locations: text('locations'), // JSON array
+});
+
+// 4. PEOPLE (Canonical Entities)
+export const people = sqliteTable('people', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull().unique(),
+  type: text('type').notNull(), // 'PERSON' | 'ROLE'
+});
+
+// 5. PEOPLE VARIANTS (Mapping noisy strings to canonical IDs)
+export const peopleVariants = sqliteTable('people_variants', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  personId: integer('person_id')
+    .references(() => people.id)
+    .notNull(),
+  rawName: text('raw_name').notNull().unique(),
+});
+
+// 6. LOCATIONS (Canonical Entities)
+export const locations = sqliteTable('locations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull().unique(),
+  type: text('type').notNull(), // 'PLACE' | 'SETTING'
+});
+
+// 7. LOCATION VARIANTS (Mapping noisy strings to canonical IDs)
+export const locationVariants = sqliteTable('location_variants', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  locationId: integer('location_id')
+    .references(() => locations.id)
+    .notNull(),
+  rawName: text('raw_name').notNull().unique(),
+});
+
+// 8. JUNCTION TABLES
+export const videoToPeople = sqliteTable(
+  'video_to_people',
+  {
+    videoId: integer('video_id')
+      .references(() => videos.id)
+      .notNull(),
+    personId: integer('person_id')
+      .references(() => people.id)
+      .notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.videoId, t.personId] }),
+  }),
+);
+
+export const sceneToPeople = sqliteTable(
+  'scene_to_people',
+  {
+    sceneId: integer('scene_id')
+      .references(() => scenes.id)
+      .notNull(),
+    personId: integer('person_id')
+      .references(() => people.id)
+      .notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.sceneId, t.personId] }),
+  }),
+);
+
+export const videoToLocations = sqliteTable(
+  'video_to_locations',
+  {
+    videoId: integer('video_id')
+      .references(() => videos.id)
+      .notNull(),
+    locationId: integer('location_id')
+      .references(() => locations.id)
+      .notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.videoId, t.locationId] }),
+  }),
+);
+
+export const sceneToLocations = sqliteTable(
+  'scene_to_locations',
+  {
+    sceneId: integer('scene_id')
+      .references(() => scenes.id)
+      .notNull(),
+    locationId: integer('location_id')
+      .references(() => locations.id)
+      .notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.sceneId, t.locationId] }),
+  }),
+);
+
+export type Video = typeof videos.$inferSelect;
+export type Transcript = typeof transcripts.$inferSelect;
+export type Scene = typeof scenes.$inferSelect;
+export type Person = typeof people.$inferSelect;
+export type PersonVariant = typeof peopleVariants.$inferSelect;
+export type Location = typeof locations.$inferSelect;
+export type LocationVariant = typeof locationVariants.$inferSelect;

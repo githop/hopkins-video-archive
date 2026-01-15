@@ -1,0 +1,15 @@
+{
+  "name": "@hop-hv-rag/search",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "rag": "bun src/rag-query.ts"
+  },
+  "dependencies": {
+    "@hop-hv-rag/db": "workspace:*",
+    "@hop-hv-rag/core": "workspace:*",
+    "@hop-hv-rag/ai": "workspace:*",
+    "drizzle-orm": "latest",
+    "zod": "latest"
+  }
+}

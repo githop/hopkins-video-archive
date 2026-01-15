@@ -1,0 +1,59 @@
+# gnarlyvllm.toml - Configuration for gnarlyvllm
+# Copy this file to gnarlyvllm.toml and customize for your setup
+
+[settings]
+# Port for the LiteLLM proxy (unified OpenAI-compatible endpoint)
+litellm_port = 4000
+
+# HuggingFace cache directory (models are downloaded here)
+huggingface_cache = "~/.cache/huggingface"
+
+# Model definitions
+# Each model has a unique name and configuration
+
+[models.qwen-7b-chat]
+repo = "Qwen/Qwen2.5-7B-Instruct-AWQ"
+task = "generate"
+port = 8000
+
+[models.qwen-7b-chat.defaults]
+gpu_memory_utilization = 0.5
+max_model_len = 32768
+enable_tool_calling = true  # Enables --enable-auto-tool-choice --tool-call-parser hermes
+reasoning_parser = "qwen3"  # Enables --reasoning-parser qwen3
+
+[models.bge-m3-embed]
+repo = "BAAI/bge-m3"
+task = "embed"
+port = 8001
+
+[models.bge-m3-embed.defaults]
+gpu_memory_utilization = 0.15
+
+[models.bge-reranker]
+repo = "BAAI/bge-reranker-v2-m3"
+task = "score"
+port = 8002
+
+[models.bge-reranker.defaults]
+gpu_memory_utilization = 0.15
+
+# Stacks - named groups of models to run together
+# Each stack can override model defaults for memory-constrained scenarios
+
+[stacks.home-video-rag]
+description = "RAG stack for whisper transcriptions"
+models = ["qwen-7b-chat", "bge-m3-embed", "bge-reranker"]
+
+# Override model settings when running in this stack
+[stacks.home-video-rag.overrides.qwen-7b-chat]
+gpu_memory_utilization = 0.4
+max_model_len = 16384
+
+[stacks.home-video-rag.overrides.bge-m3-embed]
+gpu_memory_utilization = 0.1
+
+[stacks.chat-only]
+description = "Full resources for chat model only"
+models = ["qwen-7b-chat"]
+# No overrides - uses model defaults (0.5, 32k context)

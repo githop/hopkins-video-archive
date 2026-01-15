@@ -1,0 +1,23 @@
+{
+  "name": "whisper-project",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "google-auth-library": "^10.5.0",
+    "googleapis": "^169.0.0"
+  },
+  "scripts": {
+    "download": "bun run src/download.ts",
+    "transcribe": "bun run src/transcribe.ts",
+    "organize": "bun run src/organize.ts",
+    "auth": "bun run src/authenticate.ts",
+    "map": "bun run src/map.ts"
+  }
+}

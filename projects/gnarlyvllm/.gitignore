@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+
+.tmp/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# User config (they should copy from example)
+gnarlyvllm.toml
+
+# Bun
+*.lockb
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage
+coverage/
+.nyc_output/
+
+vendor
