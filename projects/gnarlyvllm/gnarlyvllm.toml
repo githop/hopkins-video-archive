@@ -1,0 +1,58 @@
+# gnarlyvllm.toml - Minimal config for testing
+
+[settings]
+huggingface_cache = "~/.cache/huggingface"
+
+[models.chat]
+repo = "Qwen/Qwen3-4B-Thinking-2507-FP8"
+task = "generate"
+port = 8000
+
+[models.chat.defaults]
+max_model_len = 4096
+enable_tool_calling = true
+reasoning_parser = "qwen3"  # Enables --reasoning-parser qwen3
+
+[models.summarizer]
+repo = "Qwen/Qwen3-4B-AWQ"
+task = "generate"
+port = 8001
+
+[models.summarizer.defaults]
+max_model_len = "32k"
+gpu_memory_utilization = 0.9
+
+[models.embed]
+repo = "Qwen/Qwen3-Embedding-4B"
+task = 'embed'
+port = 8002
+
+[models.embed.defaults]
+max_model_len = "32k"
+gpu_memory_utilization = 0.9
+
+[models.summarizer-bulk]
+repo = "Qwen/Qwen3-4B-AWQ"
+task = "generate"
+port = 8003  # We can reuse 8001 since we only run one at a time
+
+[models.summarizer-bulk.defaults]
+gpu_memory_utilization = 0.95
+max_model_len = 8192
+max_num_seqs = 32           # High concurrency support
+
+[stacks.rag]
+description = "Chat and Embedding stack for RAG"
+models = ["summarizer", "embed"]
+
+[stacks.rag.overrides.summarizer]
+gpu_memory_utilization = 0.45
+max_model_len = 8192
+enable_tool_calling = true
+reasoning_parser = "qwen3"  # Enables --reasoning-parser qwen3
+enforce_eager = true
+
+[stacks.rag.overrides.embed]
+gpu_memory_utilization = 0.45
+max_model_len = 4096
+enforce_eager = true

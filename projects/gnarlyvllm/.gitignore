@@ -12,7 +12,6 @@ dist/
 .env.*.local
 
 # User config (they should copy from example)
-gnarlyvllm.toml
 
 # Bun
 *.lockb

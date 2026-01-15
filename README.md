@@ -6,38 +6,48 @@ A unified semantic intelligence platform for personal video archives. This proje
 
 The system is composed of three primary layers that work together to provide a seamless semantic search and interrogation experience for high-volume video data.
 
-### 1. Processing Layer (`whisper-project`)
+### 1. Data Processing (`projects/whisper-project`)
 - **Technology:** Python, WhisperX, Bun (TS)
-- **Function:** Automated extraction of audio from video files and high-accuracy transcription using WhisperX. Includes speaker diarization and alignment to ensure temporal accuracy.
+- **Function:** Handles the automated extraction of audio from video files and generates high-fidelity transcripts using WhisperX. It ensures temporal alignment of the text to the video for precise retrieval.
 
-### 2. Ingestion & Indexing Layer (`hop-hv-rag`)
-- **Technology:** Bun, SQLite, Vector Embeddings
-- **Function:** A custom RAG (Retrieval-Augmented Generation) pipeline that chunks transcripts, generates semantic embeddings, and stores them in a hybrid relational/vector database. Features entity extraction for participants and locations.
+### 2. Inference Infrastructure (`projects/gnarlyvllm`)
+- **Technology:** Docker, vLLM, LiteLLM, XState, React, openTUI
+- **Function:** A specialized Terminal User Interface (TUI) application built with **openTUI** (the same terminal library used by opencode) that orchestrates containerized **vLLM** instances. It uses State Machines to manage the lifecycle of GPU-accelerated containers and provides an OpenAI-compatible API via a **LiteLLM** proxy, supporting:
+  - **Generation:** Qwen 3 (4B Thinking / 4B AWQ)
+  - **Embeddings:** Qwen 3 (4B Embedding)
 
-### 3. Interaction Layer (`gnarlyvllm`)
-- **Technology:** React, XState, Bun, TUI
-- **Function:** A low-latency, specialized Terminal User Interface (TUI) for interacting with the archive. It leverages VLLMs to provide natural language answers grounded in the video data.
+### 3. Intelligence Layer (`projects/hop-hv-rag`)
+- **Technology:** Bun, SQLite, Vector Search
+- **Function:** The "brain" of the archive. It consumes transcripts from the processing layer, generates semantic embeddings via the inference layer, and indexes them into a hybrid SQLite database. It features:
+  - Custom ingestion pipeline for retrieval.
+  - Entity extraction for participants and locations.
+  - Interactive Search/Eval RAG tools.
 
 ## 🏗 System Architecture
 
 ```text
-[ Raw Video ] -> [ whisper-project ] -> [ JSON Transcripts ]
-                                               |
-                                               v
-[ SQLite DB ] <- [  hop-hv-rag    ] <- [ Semantic Chunking ]
+[ Raw Video ]
       |
-      +--------> [  gnarlyvllm    ] <-> [ Terminal UI ]
+      v
+[ whisper-project ] (Audio Extraction & Alignment)
+      |
+      v
+[ JSON Transcripts ]
+      |
+      +------> [ hop-hv-rag ] (Ingestion & RAG)
+                   |          ^
+                   |          | (OpenAI-compatible API)
+                   v          |
+             [ gnarlyvllm ] (vLLM Containers)
 ```
 
 ## 🛠 Tech Stack
 
-- **Runtimes:** [Bun](https://bun.sh/), Node.js, Python 3.12
-- **Languages:** TypeScript, Python
-- **AI/ML:** WhisperX, VLLM, Semantic Embeddings
-- **State Management:** XState
-- **Storage:** SQLite
-- **Tooling:** UV (Python package management), Prettier
+- **Runtimes:** [Bun](https://bun.sh/), Python 3.12
+- **AI/ML:** WhisperX, vLLM, LiteLLM
+- **Models:** Qwen 3 (Thinking, AWQ, Embedding)
+- **Storage:** SQLite (Hybrid Relational + Vector)
+- **Orchestration:** Docker
+- **UI & State:** openTUI, React, XState (Container Lifecycle)
 
----
 
-*Note: This repository contains the source code and architecture for the platform. Private data artifacts (databases, transcripts, and media) are excluded for privacy.*
