@@ -40,16 +40,15 @@ export class FamilyArchivist implements SearchProvider {
   private db: ReturnType<typeof createDb>;
   private participantService: ParticipantService;
   private locationService: LocationService;
-  private rerankModel: RerankingModel;
 
   constructor(
     private genModel: LanguageModel,
     private embedModel: EmbeddingModel,
+    private rerankModel: RerankingModel,
   ) {
     this.db = createDb(DB_PATH);
     this.participantService = new ParticipantService(REGISTRY_PATH);
     this.locationService = new LocationService(LOCATION_REGISTRY_PATH);
-    this.rerankModel = getRerankModel('rerank');
   }
 
   async init() {
@@ -411,6 +410,7 @@ async function main() {
   const archivist = new FamilyArchivist(
     getGenModel('summarizer'),
     getEmbedModel('embed-small'),
+    getRerankModel('rerank'),
   );
 
   await archivist.init();
