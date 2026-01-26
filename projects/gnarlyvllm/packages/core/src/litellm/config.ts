@@ -16,6 +16,7 @@ export type LiteLLMModelConfig = {
     model: string;
     api_base: string;
     api_key?: string;
+    custom_llm_provider?: string;
   };
 };
 
@@ -35,14 +36,18 @@ export function generateLiteLLMConfig(
 ): LiteLLMConfig {
   const modelList: LiteLLMModelConfig[] = models.map((model) => {
     // Determine the litellm model prefix based on task
-    let litellmModel: string;
+    let litellmModel = model.repo;
+    let customProvider: string | undefined;
+    let apiBase = `http://host.containers.internal:${model.port}/v1`;
 
     if (model.task === 'embed') {
       // LiteLLM uses openai/ prefix for OpenAI-compatible endpoints
       litellmModel = `openai/${model.repo}`;
     } else if (model.task === 'score') {
-      // Reranking models
-      litellmModel = `openai/${model.repo}`;
+      // Reranking models - use cohere protocol but clean model ID
+      customProvider = 'cohere';
+      // For rerank with custom provider, LiteLLM expects the base URL without /v1
+      apiBase = `http://host.containers.internal:${model.port}`;
     } else {
       // Chat/generate models
       litellmModel = `openai/${model.repo}`;
@@ -52,8 +57,9 @@ export function generateLiteLLMConfig(
       model_name: model.name,
       litellm_params: {
         model: litellmModel,
-        api_base: `http://host.containers.internal:${model.port}/v1`,
+        api_base: apiBase,
         api_key: 'dummy', // vLLM doesn't require auth by default
+        custom_llm_provider: customProvider,
       },
     };
   });
@@ -78,6 +84,11 @@ export function liteLLMConfigToYaml(config: LiteLLMConfig): string {
     lines.push(`      api_base: ${model.litellm_params.api_base}`);
     if (model.litellm_params.api_key) {
       lines.push(`      api_key: ${model.litellm_params.api_key}`);
+    }
+    if (model.litellm_params.custom_llm_provider) {
+      lines.push(
+        `      custom_llm_provider: ${model.litellm_params.custom_llm_provider}`,
+      );
     }
   }
 

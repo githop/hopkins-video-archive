@@ -119,6 +119,21 @@ bun run packages/cli/src/main.tsx <command>
 - Container names: `gnarlyvllm-<model-name>`
 - Use `host.containers.internal` to reference host from containers
 
+### Debugging vLLM Containers
+
+To inspect available flags or verify versions within the vLLM container, use the following patterns. Note that vLLM requires a GPU to be present even for `--help` or `--version` in many versions.
+
+```bash
+# Check version (requires GPU in some versions)
+podman run --rm --device nvidia.com/gpu=all docker.io/vllm/vllm-openai:latest --version
+
+# List all available serve flags (requires GPU)
+podman run --rm --device nvidia.com/gpu=all docker.io/vllm/vllm-openai:latest serve --help=all
+
+# Check for specific task/feature support
+podman run --rm --device nvidia.com/gpu=all docker.io/vllm/vllm-openai:latest serve --help=all | grep -E "task|score|reward"
+```
+
 ## CLI Commands
 
 ```bash
