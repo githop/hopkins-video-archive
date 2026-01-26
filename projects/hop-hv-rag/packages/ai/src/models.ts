@@ -4,7 +4,12 @@ export const GENERATION_MODELS = {
 } as const;
 
 export const EMBEDDING_MODELS = {
-  VLLM: ['embed'] as const,
+  VLLM: ['embed', 'embed-small'] as const,
+  GOOGLE: [] as const,
+} as const;
+
+export const RERANKING_MODELS = {
+  VLLM: ['rerank'] as const,
   GOOGLE: [] as const,
 } as const;
 
@@ -16,7 +21,14 @@ export type VllmEmbeddingModel = (typeof EMBEDDING_MODELS.VLLM)[number];
 export type GoogleEmbeddingModel = (typeof EMBEDDING_MODELS.GOOGLE)[number];
 export type EmbeddingModelName = VllmEmbeddingModel | GoogleEmbeddingModel;
 
-export type ModelName = GenerationModelName | EmbeddingModelName;
+export type VllmRerankingModel = (typeof RERANKING_MODELS.VLLM)[number];
+export type GoogleRerankingModel = (typeof RERANKING_MODELS.GOOGLE)[number];
+export type RerankingModelName = VllmRerankingModel | GoogleRerankingModel;
+
+export type ModelName =
+  | GenerationModelName
+  | EmbeddingModelName
+  | RerankingModelName;
 
 export function isGoogleModel(model: string): model is GoogleGenerationModel {
   return (GENERATION_MODELS.GOOGLE as readonly string[]).includes(model);
@@ -34,4 +46,14 @@ export function isGoogleEmbedModel(
 
 export function isVllmEmbedModel(model: string): model is VllmEmbeddingModel {
   return (EMBEDDING_MODELS.VLLM as readonly string[]).includes(model);
+}
+
+export function isGoogleRerankingModel(
+  model: string,
+): model is GoogleRerankingModel {
+  return (RERANKING_MODELS.GOOGLE as readonly string[]).includes(model);
+}
+
+export function isVllmRerankModel(model: string): model is VllmRerankingModel {
+  return (RERANKING_MODELS.VLLM as readonly string[]).includes(model);
 }

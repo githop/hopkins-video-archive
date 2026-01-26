@@ -2,14 +2,20 @@
   "name": "@hop-hv-rag/search",
   "version": "1.0.0",
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
-    "rag": "bun src/rag-query.ts"
+    "rag": "bun src/rag-query.ts",
+    "server": "bun --hot src/server.ts"
   },
   "dependencies": {
-    "@hop-hv-rag/db": "workspace:*",
-    "@hop-hv-rag/core": "workspace:*",
     "@hop-hv-rag/ai": "workspace:*",
+    "@hop-hv-rag/core": "workspace:*",
+    "@hop-hv-rag/db": "workspace:*",
+    "ai": "latest",
     "drizzle-orm": "latest",
+    "hono": "^4.11.4",
     "zod": "latest"
   }
 }

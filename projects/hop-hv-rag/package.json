@@ -30,5 +30,8 @@
   },
   "prettier": {
     "singleQuote": true
+  },
+  "dependencies": {
+    "@ai-sdk/provider": "^3.0.5"
   }
 }

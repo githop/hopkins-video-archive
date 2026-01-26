@@ -1,17 +1,22 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import type {
+  RerankingModelV3,
+  RerankingModelV3CallOptions,
+} from '@ai-sdk/provider';
 import {
   isGoogleModel,
   isVllmModel,
   isGoogleEmbedModel,
   isVllmEmbedModel,
+  isGoogleRerankingModel,
+  isVllmRerankModel,
 } from './models.ts';
-import type { EmbeddingModel, LanguageModel } from 'ai';
+import type { EmbeddingModel, LanguageModel, RerankingModel } from 'ai';
 
 export * from './models.ts';
 
 const VLLM_BASE_URL = 'http://localhost:4000/v1';
-
 export type VllmProvider = ReturnType<typeof createOpenAICompatible>;
 export type GoogleProvider = ReturnType<typeof createGoogleGenerativeAI>;
 export type AIProvider = VllmProvider | GoogleProvider;
@@ -57,4 +62,68 @@ export function getEmbedModel(modelName: string = 'embed'): EmbeddingModel {
   }
 
   throw new Error(`Unsupported embedding model: ${modelName}`);
+}
+
+interface LiteLLMRerankResponse {
+  results: Array<{
+    index: number;
+    relevance_score: number;
+  }>;
+}
+
+/**
+ * Custom Reranker for LiteLLM/vLLM since the official OpenAI-compatible
+ * provider often lacks the .rerankingModel() implementation.
+ */
+class LiteLLMReranker implements RerankingModelV3 {
+  readonly specificationVersion = 'v3';
+  readonly provider = 'litellm';
+  readonly modelId: string;
+
+  constructor(modelId: string) {
+    this.modelId = modelId;
+  }
+
+  async doRerank({ query, documents }: RerankingModelV3CallOptions) {
+    const response = await fetch(`${VLLM_BASE_URL}/rerank`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: this.modelId,
+        query,
+        documents: documents.values.map((d) =>
+          typeof d === 'string' ? d : JSON.stringify(d),
+        ),
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `LiteLLM Rerank failed (${response.status}): ${errorText}`,
+      );
+    }
+
+    const data = (await response.json()) as LiteLLMRerankResponse;
+
+    return {
+      ranking: data.results.map((r) => ({
+        index: r.index,
+        relevanceScore: r.relevance_score,
+      })),
+      warnings: [],
+    };
+  }
+}
+
+export function getRerankModel(modelName: string = 'rerank'): RerankingModel {
+  if (isGoogleRerankingModel(modelName)) {
+    throw new Error('Google reranking not yet implemented in provider');
+  }
+
+  if (isVllmRerankModel(modelName)) {
+    return new LiteLLMReranker(modelName) as unknown as RerankingModel;
+  }
+
+  throw new Error(`Unsupported reranking model: ${modelName}`);
 }

@@ -20,6 +20,7 @@
     "@hop-hv-rag/db": "workspace:*",
     "@hop-hv-rag/core": "workspace:*",
     "@hop-hv-rag/ai": "workspace:*",
+    "ai": "latest",
     "drizzle-orm": "latest",
     "zod": "latest"
   }

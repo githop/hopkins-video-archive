@@ -1,21 +1,29 @@
 import { sql, inArray } from 'drizzle-orm';
 import {
-  createDb,
-  type Scene,
   people,
   locations,
   sceneToPeople,
   sceneToLocations,
+  createDb,
 } from '@hop-hv-rag/db';
 import { join } from 'node:path';
+
 import { ParticipantService, LocationService } from '@hop-hv-rag/core';
-import { getEmbedModel, getGenModel } from '@hop-hv-rag/ai';
+import { getEmbedModel, getGenModel, getRerankModel } from '@hop-hv-rag/ai';
 import {
   generateText,
+  streamText,
   embed,
+  rerank,
+  stepCountIs,
+  convertToModelMessages,
   type LanguageModel,
   type EmbeddingModel,
+  type RerankingModel,
+  type UIMessage,
 } from 'ai';
+import { createSearchArchiveTool, type SearchProvider } from './tools/index.ts';
+import type { HybridResult } from './types.ts';
 
 /**
  * Configuration
@@ -25,24 +33,14 @@ const DB_PATH = join(DATA_DIR, 'hv-rag.db');
 const REGISTRY_PATH = join(DATA_DIR, 'participant-registry.json');
 const LOCATION_REGISTRY_PATH = join(DATA_DIR, 'location-registry.json');
 
-export interface HybridResult extends Scene {
-  videoTitle: string;
-  videoYear: number;
-  videoParticipants: string;
-  videoLocations: string;
-  videoDriveFileId: string;
-  canonicalParticipants?: string;
-  canonicalLocations?: string;
-  score?: number;
-}
-
 /**
  * FamilyArchivist: Handles hybrid search and RAG synthesis.
  */
-export class FamilyArchivist {
+export class FamilyArchivist implements SearchProvider {
   private db: ReturnType<typeof createDb>;
   private participantService: ParticipantService;
   private locationService: LocationService;
+  private rerankModel: RerankingModel;
 
   constructor(
     private genModel: LanguageModel,
@@ -51,6 +49,7 @@ export class FamilyArchivist {
     this.db = createDb(DB_PATH);
     this.participantService = new ParticipantService(REGISTRY_PATH);
     this.locationService = new LocationService(LOCATION_REGISTRY_PATH);
+    this.rerankModel = getRerankModel('rerank');
   }
 
   async init() {
@@ -63,6 +62,56 @@ export class FamilyArchivist {
   async ask(query: string): Promise<string> {
     console.log(`🤖 Consulting the Family Archivist for: "${query}"...`);
 
+    const results = await this.retrieve(query);
+
+    if (!results || results.length === 0) {
+      const msg = 'No relevant scenes found in the archive.';
+      console.log(msg);
+      return msg;
+    }
+
+    const context = await this.formatContext(results);
+    console.log(`   📊 Context retrieved. Synthesizing answer...`);
+
+    const answer = await this.synthesize(query, context);
+
+    console.log('\n--- 🤖 Archivist Response ---\n');
+    console.log(answer);
+    console.log('\n----------------------------\n');
+
+    return answer;
+  }
+
+  async streamAsk(messages: UIMessage[]) {
+    const modelMessages = await convertToModelMessages(messages);
+
+    return streamText({
+      model: this.genModel,
+      system: [
+        'You are a professional Family Historian and Video Archivist.',
+        'Check your knowledge base using the `searchArchive` tool before answering any questions.',
+        'Only respond to questions using information from tool calls.',
+        'If no relevant information is found in the tool calls, respond, "I\'m sorry, I couldn\'t find any relevant scenes in the family archive for that."',
+        '',
+        'GUIDELINES:',
+        '1. Use ONLY the provided context to answer the question.',
+        '2. Be descriptive but concise.',
+        '3. CITATIONS: You MUST cite sources using Markdown links.',
+        '   - Use the specific timestamp from the TRANSCRIPT if available for maximum precision.',
+        '   - Format: [Video Title @ MM:SS](https://drive.google.com/file/d/DRIVE_ID)',
+        '   - Convert seconds from the transcript (e.g. [1079s]) to MM:SS format (e.g. 17:59).',
+        '4. Synthesize information from multiple videos when applicable.',
+        '5. The user will see visual cards for the results you find. You should still describe the most relevant ones in your text response.',
+      ].join('\n'),
+      messages: modelMessages,
+      stopWhen: stepCountIs(9),
+      tools: {
+        searchArchive: createSearchArchiveTool(this),
+      },
+    });
+  }
+
+  public async retrieve(query: string): Promise<HybridResult[] | null> {
     // 1. Detect Entities in Query
     const [detectedPeople, detectedLocations] = await Promise.all([
       this.detectPeople(query),
@@ -87,31 +136,38 @@ export class FamilyArchivist {
     );
 
     if (results.length === 0) {
-      const msg = 'No relevant scenes found in the archive.';
-      console.log(msg);
-      return msg;
+      return null;
     }
 
-    console.log(
-      `   📊 Found ${results.length} relevant scenes. Synthesizing answer...`,
-    );
+    console.log(`   📊 Found ${results.length} relevant scenes.`);
 
-    const context = await this.formatContext(results);
-    console.log(context); // Avoid excessive console logs during eval
-    const answer = await this.synthesize(query, context);
+    return results;
+  }
 
-    console.log('\n--- 🤖 Archivist Response ---\n');
-    console.log(answer);
-    console.log('\n----------------------------\n');
-
-    return answer;
+  private getSystemPrompt(context: string): string {
+    return [
+      'You are a professional Family Historian and Video Archivist.',
+      "Analyze the provided archive fragments to answer the user's question.",
+      'GUIDELINES:',
+      '1. Use ONLY the provided context to answer the question.',
+      "2. If the answer is not in the archive, say you don't have enough information.",
+      '3. Be descriptive but concise.',
+      '4. CITATIONS: You MUST cite sources using Markdown links.',
+      '   - Use the specific timestamp from the TRANSCRIPT if available for maximum precision.',
+      '   - Format: [Video Title @ MM:SS](https://drive.google.com/file/d/DRIVE_ID)',
+      '   - Convert seconds from the transcript (e.g. [1079s]) to MM:SS format (e.g. 17:59).',
+      '5. Synthesize information from multiple videos when applicable.',
+      '',
+      'CONTEXT FROM ARCHIVE:',
+      context,
+    ].join('\n');
   }
 
   private async detectPeople(query: string) {
     const names = this.participantService.detectParticipants(query);
     if (names.length === 0) return [];
 
-    return await this.db
+    return this.db
       .select({ id: people.id, name: people.name })
       .from(people)
       .where(inArray(people.name, names))
@@ -198,7 +254,26 @@ export class FamilyArchivist {
     // 3. Reciprocal Rank Fusion
     const fused = this.fuse(vectorResults, ftsResults);
 
-    // 4. Re-rank/Filter based on people and locations if detected
+    // 4. Neural Re-ranking
+    console.log(`   🧠 Re-ranking ${fused.length} candidates...`);
+    const { ranking } = await rerank({
+      model: this.rerankModel,
+      query,
+      documents: fused.map(
+        (r) =>
+          `SCENE: ${r.title}\nSUMMARY: ${r.summary}\nTRANSCRIPT: ${r.transcript}`,
+      ),
+    });
+
+    // Apply reranked scores
+    ranking.forEach((r) => {
+      fused[r.originalIndex].score = r.score;
+    });
+
+    // Sort by new scores
+    fused.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    // 5. Re-rank/Filter based on people and locations if detected
     if (personIds.length > 0 || locationIds.length > 0) {
       // We'll give a slight boost to results that actually contain the detected person or location
       // in the junction tables
@@ -211,7 +286,7 @@ export class FamilyArchivist {
             .from(sceneToPeople)
             .where(sql`${sceneToPeople.sceneId} = ${result.id}`)
             .all();
-          const hasPerson = scenePeople.some((sp) =>
+          const hasPerson = scenePeople.some((sp: { personId: number }) =>
             personIds.includes(sp.personId),
           );
           if (hasPerson) boost *= 1.5;
@@ -223,8 +298,8 @@ export class FamilyArchivist {
             .from(sceneToLocations)
             .where(sql`${sceneToLocations.sceneId} = ${result.id}`)
             .all();
-          const hasLocation = sceneLocations.some((sl) =>
-            locationIds.includes(sl.locationId),
+          const hasLocation = sceneLocations.some(
+            (sl: { locationId: number }) => locationIds.includes(sl.locationId),
           );
           if (hasLocation) boost *= 1.5;
         }
@@ -261,7 +336,7 @@ export class FamilyArchivist {
       .map(([id, score]) => ({ ...resultMap.get(id)!, score }));
   }
 
-  private async formatContext(results: HybridResult[]): Promise<string> {
+  public async formatContext(results: HybridResult[]): Promise<string> {
     const formatted = [];
 
     for (const r of results) {
@@ -315,20 +390,8 @@ export class FamilyArchivist {
   private async synthesize(query: string, context: string): Promise<string> {
     const { text } = await generateText({
       model: this.genModel,
-      system: [
-        'You are a professional Family Historian and Video Archivist.',
-        "Analyze the provided archive fragments to answer the user's question.",
-        'GUIDELINES:',
-        '1. Use ONLY the provided context to answer the question.',
-        "2. If the answer is not in the archive, say you don't have enough information.",
-        '3. Be descriptive but concise.',
-        '4. CITATIONS: You MUST cite sources using Markdown links.',
-        '   - Use the specific timestamp from the TRANSCRIPT if available for maximum precision.',
-        '   - Format: [Video Title @ MM:SS](https://drive.google.com/file/d/DRIVE_ID)',
-        '   - Convert seconds from the transcript (e.g. [1079s]) to MM:SS format (e.g. 17:59).',
-        '5. Synthesize information from multiple videos when applicable.',
-      ].join('\n'),
-      prompt: `CONTEXT FROM ARCHIVE:\n${context}\n\nUSER QUESTION: ${query}`,
+      system: this.getSystemPrompt(context),
+      prompt: `USER QUESTION: ${query}`,
     });
     return text;
   }
@@ -347,7 +410,7 @@ async function main() {
   // Use summarizer for both if not specified, based on project constraints
   const archivist = new FamilyArchivist(
     getGenModel('summarizer'),
-    getEmbedModel('embed'),
+    getEmbedModel('embed-small'),
   );
 
   await archivist.init();
