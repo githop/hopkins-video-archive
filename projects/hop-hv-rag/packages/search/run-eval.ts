@@ -1,5 +1,5 @@
 import { FamilyArchivist } from './src/rag-query.ts';
-import { getGenModel, getEmbedModel } from '@hop-hv-rag/ai';
+import { getGenModel, getEmbedModel, getRerankModel } from '@hop-hv-rag/ai';
 
 const EVAL_PROMPTS_PATH = `${import.meta.dir}/eval-prompts.json`;
 const OUTPUT_PATH = `${import.meta.dir}/../../eval-results.md`;
@@ -20,7 +20,8 @@ async function runEval() {
   // Initialize the archivist once
   const archivist = new FamilyArchivist(
     getGenModel('summarizer'),
-    getEmbedModel('embed'),
+    getEmbedModel('embed-small'),
+    getRerankModel('rerank'),
   );
   await archivist.init();
 

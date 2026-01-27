@@ -8,7 +8,7 @@ import {
   type Video,
   type Transcript,
 } from '@hop-hv-rag/db';
-import { getGenModel } from '@hop-hv-rag/ai';
+import { getGenModel, type GenerationModelName } from '@hop-hv-rag/ai';
 import { ParticipantService, LocationService } from '@hop-hv-rag/core';
 import { generateText, type LanguageModel } from 'ai';
 import { z } from 'zod';
@@ -293,15 +293,40 @@ class VideoArchivist {
   }
 
   private getSystemPrompt(): string {
-    return [
-      'You are an expert film archivist and family historian.',
-      'Analyze the home video transcript segment and provide a high-quality archival summary.',
-      '1. title: Create a short, descriptive title for this specific segment.',
-      "2. summary: Write a concise paragraph (3-4 sentences) describing the action. Avoid 'The video captures...' or 'This shows...'. Start directly with the events.",
-      '3. participants: List people mentioned or speaking.',
-      '4. locations: List specific locations or rooms.',
-      'CRITICAL: Respond ONLY with a valid JSON object using the keys above.',
-    ].join('\n');
+    return `You are an expert film archivist cataloging the Hopkins family video archive.
+Analyze the home video transcript segment and provide a high-quality archival summary.
+
+OUTPUT FORMAT (JSON object with these keys):
+1. title: Short, descriptive title for this segment (5-10 words)
+2. summary: Concise paragraph (3-4 sentences) describing the action. Start directly with events - avoid "The video captures..." or "This shows..."
+3. participants: Array of people mentioned, speaking, or visible
+4. locations: Array of specific places, rooms, or settings
+
+HOPKINS FAMILY NAME MAPPINGS (use these canonical forms):
+- Gregory, Greggie, Greggy → "Greg"
+- Jeffrey, Jeff → "Geoff"  
+- Daniel, Dan → "Danny"
+- Daddy, Dad, Father → "Dad"
+- Mommy, Mom, Mama, Mother → "Mom"
+- Grandma, Grandmother, Nana → "Grandma"
+- Grandpa, Grandfather, Papa → "Grandpa"
+- Keep specific names with titles: "Uncle Matt", "Aunt Lisa", "Aunt Teresa"
+
+PARTICIPANT EXTRACTION RULES:
+- Use actual names when spoken or identifiable: "Greg", "Mom", "Uncle Matt"
+- Use specific roles with names when possible: "Coach Johnson", "Father Mike"
+- For unidentified speakers, use descriptive roles: "Narrator", "Announcer", "Coach"
+- NEVER use generic placeholders: "A person", "Someone", "A man", "A woman", "Another child"
+- If you cannot identify someone, omit them rather than using a generic label
+
+LOCATION EXTRACTION RULES:
+- Use specific place names: "Lake Cumberland", "Yellowstone", "76 Falls"
+- Use clear room/setting names: "Kitchen", "Living Room", "Backyard", "Church"
+- For family homes use: "Grandma's House", "Aunt Teresa's House", "Home"
+- NEVER use: "Unknown", "Unknown location", "Unspecified", "A room"
+- If location is unclear, omit it rather than guessing
+
+CRITICAL: Respond ONLY with a valid JSON object. No additional text.`;
   }
 }
 
@@ -315,7 +340,7 @@ async function main() {
       file: { type: 'string' },
       all: { type: 'boolean', default: false },
       force: { type: 'boolean', default: false },
-      model: { type: 'string', default: 'summarizer' },
+      model: { type: 'string', default: 'summarizer-bulk-14b' },
       concurrency: { type: 'string', default: '4' },
     },
     strict: true,
@@ -330,7 +355,7 @@ async function main() {
 
   const archivist = new VideoArchivist(
     db,
-    getGenModel(values.model),
+    getGenModel(values.model as GenerationModelName),
     participantService,
     locationService,
   );

@@ -1,5 +1,5 @@
 import { createDb, videos, scenes, type Scene } from '@hop-hv-rag/db';
-import { getEmbedModel } from '@hop-hv-rag/ai';
+import { getEmbedModel, type EmbeddingModelName } from '@hop-hv-rag/ai';
 import { embedMany, type EmbeddingModel } from 'ai';
 import { join } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
@@ -76,14 +76,14 @@ async function main() {
       file: { type: 'string' },
       all: { type: 'boolean', default: false },
       force: { type: 'boolean', default: false },
-      model: { type: 'string', default: 'embed' },
+      model: { type: 'string', default: 'embed-small' },
       batchSize: { type: 'string', default: '50' },
     },
     strict: true,
   });
 
   const db = createDb(DB_PATH);
-  const embedder = new SceneEmbedder(db, getEmbedModel(values.model));
+  const embedder = new SceneEmbedder(db, getEmbedModel(values.model as EmbeddingModelName));
   const batchSize = parseInt(values.batchSize!);
 
   let targetScenes: Scene[] = [];

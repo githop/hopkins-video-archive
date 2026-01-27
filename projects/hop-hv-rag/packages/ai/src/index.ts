@@ -11,6 +11,9 @@ import {
   isVllmEmbedModel,
   isGoogleRerankingModel,
   isVllmRerankModel,
+  type EmbeddingModelName,
+  type GenerationModelName,
+  type RerankingModelName,
 } from './models.ts';
 import type { EmbeddingModel, LanguageModel, RerankingModel } from 'ai';
 
@@ -40,7 +43,9 @@ function getGoogleProvider(): GoogleProvider {
   });
 }
 
-export function getGenModel(modelName: string = 'summarizer'): LanguageModel {
+export function getGenModel(
+  modelName: GenerationModelName = 'summarizer',
+): LanguageModel {
   if (isGoogleModel(modelName)) {
     return getGoogleProvider()(modelName);
   }
@@ -52,7 +57,9 @@ export function getGenModel(modelName: string = 'summarizer'): LanguageModel {
   throw new Error(`Unsupported generation model: ${modelName}`);
 }
 
-export function getEmbedModel(modelName: string = 'embed'): EmbeddingModel {
+export function getEmbedModel(
+  modelName: EmbeddingModelName = 'embed',
+): EmbeddingModel {
   if (isGoogleEmbedModel(modelName)) {
     return getGoogleProvider().textEmbeddingModel(modelName);
   }
@@ -116,7 +123,9 @@ class LiteLLMReranker implements RerankingModelV3 {
   }
 }
 
-export function getRerankModel(modelName: string = 'rerank'): RerankingModel {
+export function getRerankModel(
+  modelName: RerankingModelName = 'rerank',
+): RerankingModel {
   if (isGoogleRerankingModel(modelName)) {
     throw new Error('Google reranking not yet implemented in provider');
   }

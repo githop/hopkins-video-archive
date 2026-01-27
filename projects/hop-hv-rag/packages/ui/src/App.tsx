@@ -98,7 +98,7 @@ function App() {
         <div className="flex gap-2">
           <input
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => setInput((e.target as any).value)}
             placeholder="Ask about your family videos..."
             className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             disabled={isLoading}

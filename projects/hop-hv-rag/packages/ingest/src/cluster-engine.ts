@@ -1,4 +1,4 @@
-import { getGenModel } from '@hop-hv-rag/ai';
+import { getGenModel, type GenerationModelName } from '@hop-hv-rag/ai';
 import { generateText } from 'ai';
 import { z } from 'zod';
 import { createDb } from '@hop-hv-rag/db';
@@ -26,7 +26,7 @@ export interface ClusteringConfig<
   concurrency?: number;
   categoryFallback: string;
   validCategories: string[];
-  model?: string;
+  model?: GenerationModelName;
 }
 
 export async function runClustering<

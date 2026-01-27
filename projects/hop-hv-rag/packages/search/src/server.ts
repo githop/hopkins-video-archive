@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { FamilyArchivist } from './rag-query.ts';
-import { getGenModel, getEmbedModel } from '@hop-hv-rag/ai';
+import { getGenModel, getEmbedModel, getRerankModel } from '@hop-hv-rag/ai';
 
 const app = new Hono();
 
@@ -11,6 +11,7 @@ app.use('/*', cors());
 const archivist = new FamilyArchivist(
   getGenModel('summarizer'),
   getEmbedModel('embed-small'),
+  getRerankModel('rerank'),
 );
 
 // Initialize archivist (loads registries)
