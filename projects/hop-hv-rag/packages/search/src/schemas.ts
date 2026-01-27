@@ -17,10 +17,21 @@ export type Participant = z.infer<typeof ParticipantSchema>;
 export const LocationSchema = z.object({
   id: z.number(),
   name: z.string(),
-  type: z.enum(['PLACE', 'SETTING']),
+  type: z.enum(['PLACE', 'SETTING', 'DISCARD']),
 });
 
 export type Location = z.infer<typeof LocationSchema>;
+
+/**
+ * Schema for an activity in a scene
+ */
+export const ActivitySchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  type: z.enum(['SPORT', 'RECREATION', 'HOLIDAY', 'MILESTONE', 'DISCARD']),
+});
+
+export type Activity = z.infer<typeof ActivitySchema>;
 
 /**
  * Schema for a source (scene) returned from the archive search
@@ -42,6 +53,7 @@ export const SourceSchema = z.object({
   }),
   participants: z.array(ParticipantSchema),
   locations: z.array(LocationSchema),
+  activities: z.array(ActivitySchema),
 });
 
 export type Source = z.infer<typeof SourceSchema>;

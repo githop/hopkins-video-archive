@@ -2,13 +2,19 @@ import { sql, inArray } from 'drizzle-orm';
 import {
   people,
   locations,
+  activities,
   sceneToPeople,
   sceneToLocations,
+  sceneToActivities,
   createDb,
 } from '@hop-hv-rag/db';
 import { join } from 'node:path';
 
-import { ParticipantService, LocationService } from '@hop-hv-rag/core';
+import {
+  ParticipantService,
+  LocationService,
+  ActivityService,
+} from '@hop-hv-rag/core';
 import { getEmbedModel, getGenModel, getRerankModel } from '@hop-hv-rag/ai';
 import {
   streamText,
@@ -22,10 +28,12 @@ import type { HybridResult } from './types.ts';
 import {
   ParticipantSchema,
   LocationSchema,
+  ActivitySchema,
   type Source,
   type StreamChunk,
   type Participant,
   type Location,
+  type Activity,
 } from './schemas.ts';
 
 /**
@@ -35,6 +43,7 @@ const DATA_DIR = join(import.meta.dir, '../../../data');
 const DB_PATH = join(DATA_DIR, 'hv-rag.db');
 const REGISTRY_PATH = join(DATA_DIR, 'participant-registry.json');
 const LOCATION_REGISTRY_PATH = join(DATA_DIR, 'location-registry.json');
+const ACTIVITY_REGISTRY_PATH = join(DATA_DIR, 'activity-registry.json');
 
 /**
  * FamilyArchivist: Handles hybrid search and RAG synthesis with unified streaming API.
@@ -43,6 +52,7 @@ export class FamilyArchivist {
   private db: ReturnType<typeof createDb>;
   private participantService: ParticipantService;
   private locationService: LocationService;
+  private activityService: ActivityService;
 
   constructor(
     private genModel: LanguageModel,
@@ -52,12 +62,14 @@ export class FamilyArchivist {
     this.db = createDb(DB_PATH);
     this.participantService = new ParticipantService(REGISTRY_PATH);
     this.locationService = new LocationService(LOCATION_REGISTRY_PATH);
+    this.activityService = new ActivityService(ACTIVITY_REGISTRY_PATH);
   }
 
   async init() {
     await Promise.all([
       this.participantService.load(),
       this.locationService.load(),
+      this.activityService.load(),
     ]);
   }
 
@@ -105,7 +117,7 @@ export class FamilyArchivist {
 
   /**
    * Build structured Source[] from hybrid search results.
-   * Fetches canonical participants and locations from junction tables.
+   * Fetches canonical participants, locations, and activities from junction tables.
    */
   private async buildSources(results: HybridResult[]): Promise<Source[]> {
     const sources: Source[] = [];
@@ -144,6 +156,23 @@ export class FamilyArchivist {
 
       const locs: Location[] = locationRows.map((l) => LocationSchema.parse(l));
 
+      // Fetch canonical activities from junction table
+      const activityRows = this.db
+        .select({
+          id: activities.id,
+          name: activities.name,
+          type: activities.type,
+        })
+        .from(activities)
+        .innerJoin(
+          sceneToActivities,
+          sql`${sceneToActivities.activityId} = ${activities.id}`,
+        )
+        .where(sql`${sceneToActivities.sceneId} = ${r.id}`)
+        .all();
+
+      const acts: Activity[] = activityRows.map((a) => ActivitySchema.parse(a));
+
       // Format timestamp
       const minutes = Math.floor(r.startTime / 60);
       const seconds = Math.floor(r.startTime % 60);
@@ -166,6 +195,7 @@ export class FamilyArchivist {
         },
         participants,
         locations: locs,
+        activities: acts,
       });
     }
 
@@ -184,6 +214,8 @@ export class FamilyArchivist {
           s.participants.map((p) => p.name).join(', ') || 'None identified';
         const locationNames =
           s.locations.map((l) => l.name).join(', ') || 'Unknown';
+        const activityNames =
+          s.activities.map((a) => a.name).join(', ') || 'None identified';
 
         return [
           `VIDEO: ${s.video.title}`,
@@ -193,6 +225,7 @@ export class FamilyArchivist {
           `SCENE: ${s.sceneTitle}`,
           `PARTICIPANTS: ${participantNames}`,
           `LOCATIONS: ${locationNames}`,
+          `ACTIVITIES: ${activityNames}`,
           `SUMMARY: ${s.summary}`,
           `---`,
         ].join('\n');
@@ -212,9 +245,7 @@ export class FamilyArchivist {
       '1. Use ONLY the provided context to answer the question.',
       "2. If the answer is not in the archive, say you don't have enough information.",
       '3. Be descriptive but concise.',
-      '4. CITATIONS: You MUST cite sources using Markdown links.',
-      '   - Format: [Video Title @ MM:SS](https://drive.google.com/file/d/DRIVE_ID)',
-      '   - Use the TIMESTAMP from the context for precision.',
+      '4. You may reference videos by title and timestamp in prose (e.g., "In the 1998-99-12 video at 6:23...") but do NOT create markdown links - source links are provided separately.',
       '5. Synthesize information from multiple videos when applicable.',
       '',
       'CONTEXT FROM ARCHIVE:',
@@ -227,10 +258,12 @@ export class FamilyArchivist {
    */
   public async retrieve(query: string): Promise<HybridResult[] | null> {
     // 1. Detect Entities in Query
-    const [detectedPeople, detectedLocations] = await Promise.all([
-      this.detectPeople(query),
-      this.detectLocations(query),
-    ]);
+    const [detectedPeople, detectedLocations, detectedActivities] =
+      await Promise.all([
+        this.detectPeople(query),
+        this.detectLocations(query),
+        this.detectActivities(query),
+      ]);
 
     if (detectedPeople.length > 0) {
       console.log(
@@ -242,11 +275,17 @@ export class FamilyArchivist {
         `   Detected locations: ${detectedLocations.map((l) => l.name).join(', ')}`,
       );
     }
+    if (detectedActivities.length > 0) {
+      console.log(
+        `   Detected activities: ${detectedActivities.map((a) => a.name).join(', ')}`,
+      );
+    }
 
     const results = await this.hybridSearch(
       query,
       detectedPeople.map((p) => p.id),
       detectedLocations.map((l) => l.id),
+      detectedActivities.map((a) => a.id),
     );
 
     if (results.length === 0) {
@@ -277,6 +316,17 @@ export class FamilyArchivist {
       .select({ id: locations.id, name: locations.name })
       .from(locations)
       .where(inArray(locations.name, names))
+      .all();
+  }
+
+  private async detectActivities(query: string) {
+    const names = this.activityService.detectActivities(query);
+    if (names.length === 0) return [];
+
+    return await this.db
+      .select({ id: activities.id, name: activities.name })
+      .from(activities)
+      .where(inArray(activities.name, names))
       .all();
   }
 
@@ -317,6 +367,7 @@ export class FamilyArchivist {
     query: string,
     personIds: number[],
     locationIds: number[],
+    activityIds: number[],
   ): Promise<HybridResult[]> {
     // 1. Vector Search
     const { embedding } = await embed({
@@ -412,8 +463,12 @@ export class FamilyArchivist {
     // Sort by boosted scores
     fused.sort((a, b) => (b.score || 0) - (a.score || 0));
 
-    // 6. Additional boost for detected people and locations
-    if (personIds.length > 0 || locationIds.length > 0) {
+    // 6. Additional boost for detected people, locations, and activities
+    if (
+      personIds.length > 0 ||
+      locationIds.length > 0 ||
+      activityIds.length > 0
+    ) {
       for (const result of fused) {
         let boost = 1.0;
 
@@ -439,6 +494,18 @@ export class FamilyArchivist {
             (sl: { locationId: number }) => locationIds.includes(sl.locationId),
           );
           if (hasLocation) boost *= 1.5;
+        }
+
+        if (activityIds.length > 0) {
+          const sceneActivities = this.db
+            .select({ activityId: sceneToActivities.activityId })
+            .from(sceneToActivities)
+            .where(sql`${sceneToActivities.sceneId} = ${result.id}`)
+            .all();
+          const hasActivity = sceneActivities.some(
+            (sa: { activityId: number }) => activityIds.includes(sa.activityId),
+          );
+          if (hasActivity) boost *= 1.5;
         }
 
         if (result.score) {

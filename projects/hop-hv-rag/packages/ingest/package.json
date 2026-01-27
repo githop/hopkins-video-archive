@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "backup": "bun src/backup.ts",
+    "clean": "bun src/clean.ts",
     "seed": "bun src/seed-metadata.ts",
     "summarize": "bun src/summarize-scenes.ts",
     "init-db": "bun src/init-db.ts",
@@ -11,9 +13,11 @@
     "verify": "bun src/verify-metadata.ts",
     "verify-scenes": "bun src/verify-scenes.ts",
     "cluster-participants": "bun src/cluster-participants.ts",
-    "migrate-participants": "bun src/migrate-participants.ts",
     "cluster-locations": "bun src/cluster-locations.ts",
+    "cluster-activities": "bun src/cluster-activities.ts",
+    "migrate-participants": "bun src/migrate-participants.ts",
     "migrate-locations": "bun src/migrate-locations.ts",
+    "migrate-activities": "bun src/migrate-activities.ts",
     "validate-registry": "bun src/validate-registry.ts",
     "test-meta": "bun src/test-meta.ts"
   },

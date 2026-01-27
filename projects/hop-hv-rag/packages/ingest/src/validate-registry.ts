@@ -127,8 +127,7 @@ async function validateLocationRegistry() {
   ];
   const unknownNotDiscarded = entries.filter(
     ([key, val]) =>
-      val.category !== 'DISCARD' &&
-      unknownPatterns.some((p) => p.test(key)),
+      val.category !== 'DISCARD' && unknownPatterns.some((p) => p.test(key)),
   );
 
   if (unknownNotDiscarded.length > 0) {
@@ -157,8 +156,7 @@ async function validateLocationRegistry() {
   ];
   const potentialEvents = entries.filter(
     ([key, val]) =>
-      val.category !== 'DISCARD' &&
-      eventPatterns.some((p) => p.test(key)),
+      val.category !== 'DISCARD' && eventPatterns.some((p) => p.test(key)),
   );
 
   if (potentialEvents.length > 0) {
@@ -227,8 +225,7 @@ async function validateLocationRegistry() {
   ];
   const genericAsPlace = entries.filter(
     ([key, val]) =>
-      val.category === 'PLACE' &&
-      genericRoomPatterns.some((p) => p.test(key)),
+      val.category === 'PLACE' && genericRoomPatterns.some((p) => p.test(key)),
   );
 
   if (genericAsPlace.length > 0) {
@@ -267,10 +264,172 @@ async function validateLocationRegistry() {
   return { stats, issues };
 }
 
+async function validateActivityRegistry() {
+  const registryPath = join(DATA_DIR, 'activity-registry.json');
+  const file = Bun.file(registryPath);
+
+  if (!(await file.exists())) {
+    console.log('\n📍 Activity Registry Validation Report');
+    console.log('======================================');
+    console.log('Registry file not found, skipping validation.');
+    return { stats: null, issues: [] };
+  }
+
+  const registry: Registry = await file.json();
+
+  const entries = Object.entries(registry);
+  const issues: string[] = [];
+
+  // 1. Check for generic verbs that weren't discarded
+  const genericVerbs = [
+    'playing',
+    'talking',
+    'walking',
+    'sitting',
+    'watching',
+    'eating',
+    'running',
+    'doing',
+    'having',
+    'going',
+  ];
+  const genericNotDiscarded = entries.filter(
+    ([key, val]) =>
+      val.category !== 'DISCARD' &&
+      genericVerbs.some((v) => key.toLowerCase().includes(v)),
+  );
+
+  if (genericNotDiscarded.length > 0) {
+    issues.push(
+      `⚠️  ${genericNotDiscarded.length} generic verbs not discarded:`,
+    );
+    genericNotDiscarded.slice(0, 10).forEach(([key, val]) => {
+      issues.push(`   - "${key}" → ${val.category}`);
+    });
+    if (genericNotDiscarded.length > 10) {
+      issues.push(`   ... and ${genericNotDiscarded.length - 10} more`);
+    }
+  }
+
+  // 2. Check for birthday entries that should be MILESTONE
+  const birthdayNotMilestone = entries.filter(
+    ([key, val]) =>
+      key.toLowerCase().includes('birthday') && val.category !== 'MILESTONE',
+  );
+
+  if (birthdayNotMilestone.length > 0) {
+    issues.push(
+      `\n⚠️  ${birthdayNotMilestone.length} birthday entries not MILESTONE:`,
+    );
+    birthdayNotMilestone.slice(0, 10).forEach(([key, val]) => {
+      issues.push(`   - "${key}" → ${val.category}`);
+    });
+  }
+
+  // 3. Check for holiday names that should be HOLIDAY
+  const holidayNames = [
+    'christmas',
+    'easter',
+    'thanksgiving',
+    'halloween',
+    'fourth of july',
+    'new year',
+  ];
+  const holidayMiscategorized = entries.filter(
+    ([key, val]) =>
+      holidayNames.some((h) => key.toLowerCase().includes(h)) &&
+      val.category !== 'HOLIDAY' &&
+      val.category !== 'DISCARD',
+  );
+
+  if (holidayMiscategorized.length > 0) {
+    issues.push(
+      `\n⚠️  ${holidayMiscategorized.length} holidays miscategorized:`,
+    );
+    holidayMiscategorized.slice(0, 10).forEach(([key, val]) => {
+      issues.push(`   - "${key}" → ${val.category}`);
+    });
+  }
+
+  // 4. Check for potential missed merges
+  const byBaseName = new Map<string, Set<string>>();
+  entries
+    .filter(([_, val]) => val.category !== 'DISCARD')
+    .forEach(([_, val]) => {
+      const baseName = val.canonical
+        .replace(/^(The|A|An)\s+/i, '')
+        .split(/[\s,'-]/)[0]
+        .toLowerCase();
+      if (baseName.length > 3) {
+        if (!byBaseName.has(baseName)) {
+          byBaseName.set(baseName, new Set());
+        }
+        byBaseName.get(baseName)!.add(val.canonical);
+      }
+    });
+
+  const potentialMerges = Array.from(byBaseName.entries())
+    .filter(([_, canonicals]) => canonicals.size > 1)
+    .filter(([name, _]) => name.length > 3);
+
+  if (potentialMerges.length > 0) {
+    issues.push(`\n⚠️  ${potentialMerges.length} potential merge candidates:`);
+    potentialMerges.slice(0, 15).forEach(([baseName, canonicals]) => {
+      issues.push(`   - ${baseName}: ${Array.from(canonicals).join(', ')}`);
+    });
+    if (potentialMerges.length > 15) {
+      issues.push(`   ... and ${potentialMerges.length - 15} more`);
+    }
+  }
+
+  // 5. Check for missing reasoning
+  const noReasoning = entries.filter(
+    ([_, val]) =>
+      !val.reasoning ||
+      val.reasoning === 'No reasoning provided' ||
+      val.reasoning === 'Processed',
+  );
+
+  if (noReasoning.length > 0) {
+    issues.push(`\n⚠️  ${noReasoning.length} entries without proper reasoning`);
+  }
+
+  // 6. Summary stats
+  const stats = {
+    total: entries.length,
+    sport: entries.filter(([_, v]) => v.category === 'SPORT').length,
+    recreation: entries.filter(([_, v]) => v.category === 'RECREATION').length,
+    holiday: entries.filter(([_, v]) => v.category === 'HOLIDAY').length,
+    milestone: entries.filter(([_, v]) => v.category === 'MILESTONE').length,
+    discard: entries.filter(([_, v]) => v.category === 'DISCARD').length,
+    normalized: entries.filter(([k, v]) => k !== v.canonical).length,
+  };
+
+  console.log('\n🎯 Activity Registry Validation Report');
+  console.log('======================================');
+  console.log(`Total entries: ${stats.total}`);
+  console.log(`  SPORT: ${stats.sport}`);
+  console.log(`  RECREATION: ${stats.recreation}`);
+  console.log(`  HOLIDAY: ${stats.holiday}`);
+  console.log(`  MILESTONE: ${stats.milestone}`);
+  console.log(`  DISCARD: ${stats.discard}`);
+  console.log(`  Normalized: ${stats.normalized}`);
+  console.log('');
+
+  if (issues.length > 0) {
+    console.log(issues.join('\n'));
+  } else {
+    console.log('✅ No issues found!');
+  }
+
+  return { stats, issues };
+}
+
 // Run validation
 async function main() {
   await validateParticipantRegistry();
   await validateLocationRegistry();
+  await validateActivityRegistry();
 }
 
 main().catch(console.error);

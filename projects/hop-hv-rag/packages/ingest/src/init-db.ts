@@ -25,6 +25,7 @@ async function main() {
       global_summary TEXT,
       participants TEXT,
       locations TEXT,
+      activities TEXT,
       created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
     )
   `);
@@ -49,7 +50,8 @@ async function main() {
       summary TEXT NOT NULL,
       transcript TEXT,
       participants TEXT,
-      locations TEXT
+      locations TEXT,
+      activities TEXT
     )
   `);
 
@@ -117,11 +119,43 @@ async function main() {
     )
   `);
 
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS activities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      type TEXT NOT NULL
+    )
+  `);
+
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS activity_variants (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      activity_id INTEGER NOT NULL REFERENCES activities(id),
+      raw_name TEXT NOT NULL UNIQUE
+    )
+  `);
+
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS video_to_activities (
+      video_id INTEGER NOT NULL REFERENCES videos(id),
+      activity_id INTEGER NOT NULL REFERENCES activities(id),
+      PRIMARY KEY (video_id, activity_id)
+    )
+  `);
+
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS scene_to_activities (
+      scene_id INTEGER NOT NULL REFERENCES scenes(id),
+      activity_id INTEGER NOT NULL REFERENCES activities(id),
+      PRIMARY KEY (scene_id, activity_id)
+    )
+  `);
+
   console.log('Standard tables created.');
 
   console.log('Creating FTS5 table...');
   // Virtual table for Full-Text Search
-  // We index the title, summary, transcript, participants, and locations
+  // We index the title, summary, transcript, participants, locations, and activities
   db.run(sql`
     CREATE VIRTUAL TABLE IF NOT EXISTS fts_scenes USING fts5(
       id UNINDEXED,
@@ -131,6 +165,7 @@ async function main() {
       transcript,
       participants,
       locations,
+      activities,
       content='scenes',
       content_rowid='id'
     );
@@ -139,24 +174,24 @@ async function main() {
   // Triggers to keep FTS in sync with the scenes table
   db.run(sql`
     CREATE TRIGGER IF NOT EXISTS scenes_ai AFTER INSERT ON scenes BEGIN
-      INSERT INTO fts_scenes(rowid, id, video_id, title, summary, transcript, participants, locations)
-      VALUES (new.id, new.id, new.video_id, new.title, new.summary, new.transcript, new.participants, new.locations);
+      INSERT INTO fts_scenes(rowid, id, video_id, title, summary, transcript, participants, locations, activities)
+      VALUES (new.id, new.id, new.video_id, new.title, new.summary, new.transcript, new.participants, new.locations, new.activities);
     END;
   `);
 
   db.run(sql`
     CREATE TRIGGER IF NOT EXISTS scenes_ad AFTER DELETE ON scenes BEGIN
-      INSERT INTO fts_scenes(fts_scenes, rowid, id, video_id, title, summary, transcript, participants, locations)
-      VALUES('delete', old.id, old.id, old.video_id, old.title, old.summary, old.transcript, old.participants, old.locations);
+      INSERT INTO fts_scenes(fts_scenes, rowid, id, video_id, title, summary, transcript, participants, locations, activities)
+      VALUES('delete', old.id, old.id, old.video_id, old.title, old.summary, old.transcript, old.participants, old.locations, old.activities);
     END;
   `);
 
   db.run(sql`
     CREATE TRIGGER IF NOT EXISTS scenes_au AFTER UPDATE ON scenes BEGIN
-      INSERT INTO fts_scenes(fts_scenes, rowid, id, video_id, title, summary, transcript, participants, locations)
-      VALUES('delete', old.id, old.id, old.video_id, old.title, old.summary, old.transcript, old.participants, old.locations);
-      INSERT INTO fts_scenes(rowid, id, video_id, title, summary, transcript, participants, locations)
-      VALUES (new.id, new.id, new.video_id, new.title, new.summary, new.transcript, new.participants, new.locations);
+      INSERT INTO fts_scenes(fts_scenes, rowid, id, video_id, title, summary, transcript, participants, locations, activities)
+      VALUES('delete', old.id, old.id, old.video_id, old.title, old.summary, old.transcript, old.participants, old.locations, old.activities);
+      INSERT INTO fts_scenes(rowid, id, video_id, title, summary, transcript, participants, locations, activities)
+      VALUES (new.id, new.id, new.video_id, new.title, new.summary, new.transcript, new.participants, new.locations, new.activities);
     END;
   `);
 

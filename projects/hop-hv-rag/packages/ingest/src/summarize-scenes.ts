@@ -5,14 +5,19 @@ import {
   scenes,
   sceneToPeople,
   sceneToLocations,
+  sceneToActivities,
   type Video,
   type Transcript,
 } from '@hop-hv-rag/db';
 import { getGenModel, type GenerationModelName } from '@hop-hv-rag/ai';
-import { ParticipantService, LocationService } from '@hop-hv-rag/core';
+import {
+  ParticipantService,
+  LocationService,
+  ActivityService,
+} from '@hop-hv-rag/core';
 import { generateText, type LanguageModel } from 'ai';
 import { z } from 'zod';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, inArray } from 'drizzle-orm';
 import { parseArgs } from 'node:util';
 
 /**
@@ -22,6 +27,7 @@ const DATA_DIR = `${import.meta.dir}/../../../data`;
 const DB_PATH = `${DATA_DIR}/hv-rag.db`;
 const REGISTRY_PATH = `${DATA_DIR}/participant-registry.json`;
 const LOCATION_REGISTRY_PATH = `${DATA_DIR}/location-registry.json`;
+const ACTIVITY_REGISTRY_PATH = `${DATA_DIR}/activity-registry.json`;
 const CHUNK_DURATION_SECONDS = 180;
 
 /**
@@ -34,6 +40,7 @@ const SceneSchema = z.object({
   narrative_summary: z.string().optional(),
   participants: z.array(z.string()).default([]),
   locations: z.array(z.string()).default([]),
+  activities: z.array(z.string()).default([]),
 });
 
 type RawAiOutput = z.infer<typeof SceneSchema>;
@@ -43,6 +50,7 @@ interface SceneData {
   summary: string;
   participants: string[];
   locations: string[];
+  activities: string[];
 }
 
 interface Chunk {
@@ -62,6 +70,7 @@ class VideoArchivist {
     private model: LanguageModel,
     private participantService: ParticipantService,
     private locationService: LocationService,
+    private activityService: ActivityService,
   ) {}
 
   /**
@@ -98,19 +107,21 @@ class VideoArchivist {
   }
 
   /**
-   * Aggregates participants and locations from all scenes back to the video record.
+   * Aggregates participants, locations, and activities from all scenes back to the video record.
    */
   private async aggregateVideoMetadata(videoId: number) {
     const videoScenes = await this.db
       .select({
         participants: scenes.participants,
         locations: scenes.locations,
+        activities: scenes.activities,
       })
       .from(scenes)
       .where(eq(scenes.videoId, videoId));
 
     const allParticipants = new Set<string>();
     const allLocations = new Set<string>();
+    const allActivities = new Set<string>();
 
     for (const scene of videoScenes) {
       if (scene.participants) {
@@ -121,6 +132,10 @@ class VideoArchivist {
         const locs = JSON.parse(scene.locations) as string[];
         locs.forEach((l) => allLocations.add(l));
       }
+      if (scene.activities) {
+        const acts = JSON.parse(scene.activities) as string[];
+        acts.forEach((a) => allActivities.add(a));
+      }
     }
 
     await this.db
@@ -128,11 +143,12 @@ class VideoArchivist {
       .set({
         participants: JSON.stringify(Array.from(allParticipants)),
         locations: JSON.stringify(Array.from(allLocations)),
+        activities: JSON.stringify(Array.from(allActivities)),
       })
       .where(eq(videos.id, videoId));
 
     console.log(
-      `   ✨ Updated video metadata: ${allParticipants.size} participants, ${allLocations.size} locations.`,
+      `   ✨ Updated video metadata: ${allParticipants.size} participants, ${allLocations.size} locations, ${allActivities.size} activities.`,
     );
   }
 
@@ -190,34 +206,64 @@ class VideoArchivist {
   }
 
   /**
+   * Retry helper with exponential backoff
+   */
+  private async withRetry<T>(
+    fn: () => Promise<T>,
+    maxRetries = 3,
+    baseDelay = 1000,
+  ): Promise<T> {
+    let lastError: Error | undefined;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (attempt < maxRetries - 1) {
+          const delay = baseDelay * Math.pow(2, attempt);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+    throw lastError;
+  }
+
+  /**
    * Individual worker unit: AI request + Database save
    */
   private async summarizeChunk(videoId: number, chunk: Chunk) {
     const { startTime, endTime, text, rawSegments } = chunk;
 
     try {
-      const { text: resultText } = await generateText({
-        model: this.model,
-        system: this.getSystemPrompt(),
-        prompt: `Transcript for the current 3-minute segment:\n\n${text}`,
+      const object = await this.withRetry(async () => {
+        const { text: resultText } = await generateText({
+          model: this.model,
+          system: this.getSystemPrompt(),
+          prompt: `Transcript for the current 3-minute segment:\n\n${text}`,
+        });
+
+        const jsonMatch = resultText.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error(
+            `No JSON found in AI response: ${resultText.slice(0, 200)}`,
+          );
+        }
+
+        const rawObject = JSON.parse(jsonMatch[0]);
+        return SceneSchema.parse(rawObject);
       });
-
-      const jsonMatch = resultText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error(`No JSON found in AI response: ${resultText}`);
-      }
-
-      const rawObject = JSON.parse(jsonMatch[0]);
-      const object = SceneSchema.parse(rawObject);
 
       const data = this.normalizeAiOutput(object);
 
-      // Normalize participants using the service
+      // Normalize entities using the services
       const canonicalParticipants = this.participantService.getCanonicalNames(
         data.participants,
       );
       const canonicalLocations = this.locationService.getCanonicalNames(
         data.locations,
+      );
+      const canonicalActivities = this.activityService.getCanonicalNames(
+        data.activities,
       );
 
       const [sceneResult] = await this.db
@@ -233,6 +279,7 @@ class VideoArchivist {
             .join(' '),
           participants: JSON.stringify(canonicalParticipants),
           locations: JSON.stringify(canonicalLocations),
+          activities: JSON.stringify(canonicalActivities),
         })
         .returning();
 
@@ -273,12 +320,32 @@ class VideoArchivist {
             }
           }
         }
+
+        if (canonicalActivities.length > 0) {
+          for (const canon of canonicalActivities) {
+            const activity = await this.db.query.activities.findFirst({
+              where: (activities, { eq }) => eq(activities.name, canon),
+            });
+
+            if (activity) {
+              await this.db
+                .insert(sceneToActivities)
+                .values({
+                  sceneId: sceneResult.id,
+                  activityId: activity.id,
+                })
+                .onConflictDoNothing();
+            }
+          }
+        }
       }
 
       console.log(`   ✅ [${startTime.toFixed(0)}s] ${data.title}`);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`   ❌ [${startTime.toFixed(0)}s] Failed: ${message}`);
+      console.error(
+        `   ❌ [${startTime.toFixed(0)}s] Failed after 3 retries: ${message}`,
+      );
     }
   }
 
@@ -289,6 +356,7 @@ class VideoArchivist {
         output.summary || output.narrative_summary || 'No summary available',
       participants: output.participants ?? [],
       locations: output.locations ?? [],
+      activities: output.activities ?? [],
     };
   }
 
@@ -301,6 +369,7 @@ OUTPUT FORMAT (JSON object with these keys):
 2. summary: Concise paragraph (3-4 sentences) describing the action. Start directly with events - avoid "The video captures..." or "This shows..."
 3. participants: Array of people mentioned, speaking, or visible
 4. locations: Array of specific places, rooms, or settings
+5. activities: Array of activities, events, or occasions depicted
 
 HOPKINS FAMILY NAME MAPPINGS (use these canonical forms):
 - Gregory, Greggie, Greggy → "Greg"
@@ -326,6 +395,16 @@ LOCATION EXTRACTION RULES:
 - NEVER use: "Unknown", "Unknown location", "Unspecified", "A room"
 - If location is unclear, omit it rather than guessing
 
+ACTIVITY EXTRACTION RULES:
+- Sports: "Football", "Tennis", "Wrestling", "Baseball", "Golf", "Skiing", "Basketball", "Soccer"
+- Recreation: "Fishing", "Swimming", "Hiking", "Boating", "Hunting", "Camping", "Biking"
+- Holidays: "Christmas", "Easter", "Thanksgiving", "Halloween", "Fourth of July"
+- Milestones: "Birthday", "Baptism", "Wedding", "Graduation", "Funeral", "Anniversary"
+- Use noun forms: "Fishing" not "went fishing", "Christmas" not "Christmas morning"
+- Be specific when context is clear: "Football Practice" vs just "Football"
+- NEVER use generic verbs: "playing", "talking", "walking", "sitting", "watching"
+- If no clear activity/event is depicted, return empty array
+
 CRITICAL: Respond ONLY with a valid JSON object. No additional text.`;
   }
 }
@@ -341,25 +420,32 @@ async function main() {
       all: { type: 'boolean', default: false },
       force: { type: 'boolean', default: false },
       model: { type: 'string', default: 'summarizer-bulk-14b' },
-      concurrency: { type: 'string', default: '4' },
+      concurrency: { type: 'string', default: '6' },
+      'video-concurrency': { type: 'string', default: '2' },
     },
     strict: true,
   });
 
   const db = createDb(DB_PATH);
   const participantService = new ParticipantService(REGISTRY_PATH);
-  await participantService.load();
-
   const locationService = new LocationService(LOCATION_REGISTRY_PATH);
-  await locationService.load();
+  const activityService = new ActivityService(ACTIVITY_REGISTRY_PATH);
+
+  await Promise.all([
+    participantService.load(),
+    locationService.load(),
+    activityService.load(),
+  ]);
 
   const archivist = new VideoArchivist(
     db,
     getGenModel(values.model as GenerationModelName),
     participantService,
     locationService,
+    activityService,
   );
   const concurrency = parseInt(values.concurrency!);
+  const videoConcurrency = parseInt(values['video-concurrency']!);
 
   // Determine target videos
   let targetVideos: Video[] = [];
@@ -392,13 +478,49 @@ async function main() {
     process.exit(1);
   }
 
+  // Calculate durations for LPT scheduling
+  if (targetVideos.length > 0) {
+    const videoIds = targetVideos.map((v) => v.id);
+    const durations = await db
+      .select({
+        videoId: transcripts.videoId,
+        maxTime: sql<number>`MAX(${transcripts.endTime})`,
+      })
+      .from(transcripts)
+      .where(inArray(transcripts.videoId, videoIds))
+      .groupBy(transcripts.videoId);
+
+    const durationMap = new Map(durations.map((d) => [d.videoId, d.maxTime]));
+
+    // Sort longest first
+    targetVideos.sort((a, b) => {
+      const durA = durationMap.get(a.id) ?? 0;
+      const durB = durationMap.get(b.id) ?? 0;
+      return durB - durA;
+    });
+  }
+
   console.log(
-    `🎬 Archivist starting. Processing ${targetVideos.length} videos...`,
+    `🎬 Archivist starting. Processing ${targetVideos.length} videos with ${videoConcurrency} concurrent videos (LPT scheduled)...`,
   );
 
+  const activePromises = new Set<Promise<void>>();
+
   for (const video of targetVideos) {
-    await archivist.processVideo(video, { force: values.force, concurrency });
+    const promise = archivist.processVideo(video, {
+      force: values.force,
+      concurrency,
+    });
+    activePromises.add(promise);
+
+    promise.finally(() => activePromises.delete(promise));
+
+    if (activePromises.size >= videoConcurrency) {
+      await Promise.race(activePromises);
+    }
   }
+
+  await Promise.all(activePromises);
 
   console.log('\n🏁 All videos processed.');
 }

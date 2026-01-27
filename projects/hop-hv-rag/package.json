@@ -5,6 +5,8 @@
     "packages/*"
   ],
   "scripts": {
+    "ingest:backup": "bun --filter @hop-hv-rag/ingest backup",
+    "ingest:reset": "rm -f data/hv-rag.db data/unique-*.json data/*-registry.json && bun run ingest:init-db && bun run ingest:init-vec && bun run ingest:seed",
     "ingest:seed": "bun --filter @hop-hv-rag/ingest seed",
     "ingest:summarize": "bun --filter @hop-hv-rag/ingest summarize",
     "ingest:init-db": "bun --filter @hop-hv-rag/ingest init-db",
@@ -13,11 +15,12 @@
     "ingest:verify": "bun --filter @hop-hv-rag/ingest verify",
     "ingest:verify-scenes": "bun --filter @hop-hv-rag/ingest verify-scenes",
     "ingest:cluster-participants": "bun --filter @hop-hv-rag/ingest cluster-participants",
-    "ingest:migrate-participants": "bun --filter @hop-hv-rag/ingest migrate-participants",
     "ingest:cluster-locations": "bun --filter @hop-hv-rag/ingest cluster-locations",
+    "ingest:cluster-activities": "bun --filter @hop-hv-rag/ingest cluster-activities",
+    "ingest:migrate-participants": "bun --filter @hop-hv-rag/ingest migrate-participants",
     "ingest:migrate-locations": "bun --filter @hop-hv-rag/ingest migrate-locations",
+    "ingest:migrate-activities": "bun --filter @hop-hv-rag/ingest migrate-activities",
     "ingest:validate-registry": "bun --cwd packages/ingest validate-registry",
-    "ingest:reset": "rm -f data/hv-rag.db data/unique-*.json data/*-registry.json && bun run ingest:init-db && bun run ingest:init-vec && bun run ingest:seed",
     "search:rag": "bun --cwd packages/search rag",
     "search:eval": "bun --cwd packages/search run-eval.ts",
     "ui:dev": "bun --cwd packages/ui dev --host 0.0.0.0",

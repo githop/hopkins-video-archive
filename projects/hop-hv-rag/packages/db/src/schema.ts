@@ -18,6 +18,7 @@ export const videos = sqliteTable('videos', {
   globalSummary: text('global_summary'),
   participants: text('participants'), // JSON array
   locations: text('locations'), // JSON array
+  activities: text('activities'), // JSON array
   createdAt: text('created_at').default(sql`(CURRENT_TIMESTAMP)`),
 });
 
@@ -45,6 +46,7 @@ export const scenes = sqliteTable('scenes', {
   transcript: text('transcript'), // The raw text for this chunk
   participants: text('participants'), // JSON array
   locations: text('locations'), // JSON array
+  activities: text('activities'), // JSON array
 });
 
 // 4. PEOPLE (Canonical Entities)
@@ -79,7 +81,23 @@ export const locationVariants = sqliteTable('location_variants', {
   rawName: text('raw_name').notNull().unique(),
 });
 
-// 8. JUNCTION TABLES
+// 8. ACTIVITIES (Canonical Entities)
+export const activities = sqliteTable('activities', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull().unique(),
+  type: text('type').notNull(), // 'SPORT' | 'RECREATION' | 'HOLIDAY' | 'MILESTONE'
+});
+
+// 9. ACTIVITY VARIANTS (Mapping noisy strings to canonical IDs)
+export const activityVariants = sqliteTable('activity_variants', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  activityId: integer('activity_id')
+    .references(() => activities.id)
+    .notNull(),
+  rawName: text('raw_name').notNull().unique(),
+});
+
+// 10. JUNCTION TABLES
 export const videoToPeople = sqliteTable(
   'video_to_people',
   {
@@ -140,6 +158,36 @@ export const sceneToLocations = sqliteTable(
   }),
 );
 
+export const videoToActivities = sqliteTable(
+  'video_to_activities',
+  {
+    videoId: integer('video_id')
+      .references(() => videos.id)
+      .notNull(),
+    activityId: integer('activity_id')
+      .references(() => activities.id)
+      .notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.videoId, t.activityId] }),
+  }),
+);
+
+export const sceneToActivities = sqliteTable(
+  'scene_to_activities',
+  {
+    sceneId: integer('scene_id')
+      .references(() => scenes.id)
+      .notNull(),
+    activityId: integer('activity_id')
+      .references(() => activities.id)
+      .notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.sceneId, t.activityId] }),
+  }),
+);
+
 export type Video = typeof videos.$inferSelect;
 export type Transcript = typeof transcripts.$inferSelect;
 export type Scene = typeof scenes.$inferSelect;
@@ -147,3 +195,5 @@ export type Person = typeof people.$inferSelect;
 export type PersonVariant = typeof peopleVariants.$inferSelect;
 export type Location = typeof locations.$inferSelect;
 export type LocationVariant = typeof locationVariants.$inferSelect;
+export type Activity = typeof activities.$inferSelect;
+export type ActivityVariant = typeof activityVariants.$inferSelect;

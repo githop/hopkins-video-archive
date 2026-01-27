@@ -60,8 +60,7 @@ port = 8006
 gpu_memory_utilization = 0.9
 max_model_len = 8192               # Good context length for batches
 max_num_seqs = 16                  # Higher concurrency than 32B model
-enable_reasoning = true            # Enable thinking mode
-reasoning_parser = "deepseek_r1"   # vLLM parser for Qwen3 thinking
+enforce_eager = true               # Avoid CUDA graph overhead for varying lengths
 
 [models.rerank]
 repo = "Qwen/Qwen3-Reranker-4B"
