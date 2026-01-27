@@ -51,6 +51,18 @@ gpu_memory_utilization = 0.95
 max_model_len = 8192
 max_num_seqs = 32           # High concurrency support
 
+[models.summarizer-bulk-14b]
+repo = "Qwen/Qwen3-14B-AWQ"
+task = "generate"
+port = 8006
+
+[models.summarizer-bulk-14b.defaults]
+gpu_memory_utilization = 0.9
+max_model_len = 8192               # Good context length for batches
+max_num_seqs = 16                  # Higher concurrency than 32B model
+enable_reasoning = true            # Enable thinking mode
+reasoning_parser = "deepseek_r1"   # vLLM parser for Qwen3 thinking
+
 [models.rerank]
 repo = "Qwen/Qwen3-Reranker-4B"
 task = "score"

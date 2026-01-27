@@ -12,6 +12,7 @@ export type VllmContainerConfig = {
   model: ResolvedModelConfig;
   settings: Settings;
   hfToken?: string;
+  image?: string; // Custom image override
 };
 
 /**
@@ -38,7 +39,7 @@ function parseUnit(value: number | string | undefined): number | undefined {
 export function buildVllmContainerOptions(
   config: VllmContainerConfig,
 ): ContainerRunOptions {
-  const { name, model, settings, hfToken } = config;
+  const { name, model, settings, hfToken, image } = config;
 
   // Build environment variables
   const env: Record<string, string> = {};
@@ -122,9 +123,12 @@ export function buildVllmContainerOptions(
   // Expand HF cache path
   const hfCache = settings.huggingface_cache.replace(/^~/, Bun.env.HOME || '');
 
+  // Use custom image if specified on model, otherwise default
+  const containerImage = image || model.image || VLLM_IMAGE;
+
   return {
     name,
-    image: VLLM_IMAGE,
+    image: containerImage,
     ports: [{ host: model.port, container: model.port }],
     env,
     volumes: [{ host: hfCache, container: '/root/.cache/huggingface' }],

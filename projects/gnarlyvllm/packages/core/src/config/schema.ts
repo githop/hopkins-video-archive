@@ -34,6 +34,7 @@ export const ModelConfigSchema = z.object({
   repo: z.string(), // HuggingFace repo ID
   task: ModelTaskSchema,
   port: z.number().int().min(1024).max(65535),
+  image: z.string().optional(), // Custom vLLM image override
   defaults: ModelDefaultsSchema.optional(),
 });
 export type ModelConfig = z.infer<typeof ModelConfigSchema>;

@@ -31,6 +31,9 @@ async function main() {
     // In a real app we'd iterate over the registry entries directly.
     const entry = participantService.resolve(name);
 
+    // Skip DISCARD entries - they shouldn't be in the people table
+    if (entry.category === 'DISCARD') continue;
+
     const [person] = await db
       .insert(people)
       .values({

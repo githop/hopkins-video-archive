@@ -1,5 +1,5 @@
 export const GENERATION_MODELS = {
-  VLLM: ['summarizer', 'summarizer-bulk'] as const,
+  VLLM: ['summarizer', 'summarizer-bulk', 'summarizer-bulk-14b'] as const,
   GOOGLE: ['gemini-3-flash-preview'] as const,
 } as const;
 

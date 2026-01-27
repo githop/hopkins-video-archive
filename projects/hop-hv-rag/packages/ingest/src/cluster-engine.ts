@@ -26,6 +26,7 @@ export interface ClusteringConfig<
   concurrency?: number;
   categoryFallback: string;
   validCategories: string[];
+  model?: string;
 }
 
 export async function runClustering<
@@ -45,6 +46,7 @@ export async function runClustering<
     concurrency = 4,
     categoryFallback,
     validCategories,
+    model: modelName = 'summarizer-bulk',
   } = config;
 
   const db = createDb(dbPath);
@@ -87,7 +89,8 @@ export async function runClustering<
   }
 
   // 3. Process batches with concurrency
-  const model = getGenModel('summarizer-bulk');
+  const model = getGenModel(modelName);
+  console.log(`Using model: ${modelName}`);
   const activePromises = new Set<Promise<void>>();
 
   for (let i = 0; i < items.length; i += batchSize) {
