@@ -54,6 +54,8 @@ interface SceneData {
 }
 
 interface Chunk {
+  windowStart: number;
+  windowEnd: number;
   startTime: number;
   endTime: number;
   text: string;
@@ -83,7 +85,29 @@ class VideoArchivist {
     console.log(`\n🎥 [${video.filename}] (ID: ${video.id})`);
 
     if (options.force) {
-      await this.db.delete(scenes).where(eq(scenes.videoId, video.id));
+      // Find all scene IDs for this video to clean up junction tables
+      const scenesToDelete = await this.db
+        .select({ id: scenes.id })
+        .from(scenes)
+        .where(eq(scenes.videoId, video.id));
+
+      const sceneIds = scenesToDelete.map((s) => s.id);
+
+      if (sceneIds.length > 0) {
+        // Delete from junction tables first
+        await this.db
+          .delete(sceneToPeople)
+          .where(inArray(sceneToPeople.sceneId, sceneIds));
+        await this.db
+          .delete(sceneToLocations)
+          .where(inArray(sceneToLocations.sceneId, sceneIds));
+        await this.db
+          .delete(sceneToActivities)
+          .where(inArray(sceneToActivities.sceneId, sceneIds));
+
+        // Finally delete the scenes
+        await this.db.delete(scenes).where(eq(scenes.videoId, video.id));
+      }
     }
 
     const segments = await this.db
@@ -97,10 +121,40 @@ class VideoArchivist {
       return;
     }
 
-    const chunks = this.createChunks(segments);
-    console.log(
-      `   🚀 Processing ${chunks.length} chunks (Concurrency: ${options.concurrency})...`,
-    );
+    const allChunks = this.createChunks(segments);
+
+    // Idempotency check: Filter out chunks that have already been processed
+    const existingScenes = await this.db
+      .select({ startTime: scenes.startTime })
+      .from(scenes)
+      .where(eq(scenes.videoId, video.id));
+
+    const chunks = allChunks.filter((chunk) => {
+      // Check if any existing scene falls within this chunk's window
+      const isProcessed = existingScenes.some(
+        (scene) =>
+          scene.startTime >= chunk.windowStart &&
+          scene.startTime < chunk.windowEnd,
+      );
+      return !isProcessed;
+    });
+
+    if (chunks.length === 0) {
+      console.log(
+        `   ✅ Video fully processed (skipping ${allChunks.length} chunks).`,
+      );
+      return;
+    }
+
+    if (chunks.length < allChunks.length) {
+      console.log(
+        `   ℹ️ Processing ${chunks.length} missing chunks (${allChunks.length - chunks.length} skipped)...`,
+      );
+    } else {
+      console.log(
+        `   🚀 Processing ${chunks.length} chunks (Concurrency: ${options.concurrency})...`,
+      );
+    }
 
     await this.processChunksInParallel(video.id, chunks, options.concurrency);
     await this.aggregateVideoMetadata(video.id);
@@ -168,6 +222,8 @@ class VideoArchivist {
 
       if (chunkSegments.length > 0) {
         chunks.push({
+          windowStart: start,
+          windowEnd: end,
           startTime: chunkSegments[0].startTime,
           endTime: chunkSegments[chunkSegments.length - 1].endTime,
           text: chunkSegments
@@ -455,22 +511,7 @@ async function main() {
       .from(videos)
       .where(eq(videos.filename, values.file));
   } else if (values.all) {
-    if (values.force) {
-      targetVideos = await db.select().from(videos);
-    } else {
-      const processed = await db
-        .select({ id: scenes.videoId })
-        .from(scenes)
-        .groupBy(scenes.videoId);
-      const processedIds = processed.map((v) => v.id);
-      targetVideos =
-        processedIds.length > 0
-          ? await db
-              .select()
-              .from(videos)
-              .where(sql`id NOT IN (${processedIds.join(',')})`)
-          : await db.select().from(videos);
-    }
+    targetVideos = await db.select().from(videos);
   } else {
     console.error(
       'Usage: bun ingest:summarize --file <filename> | --all [--force] [--concurrency <n>]',
@@ -507,10 +548,18 @@ async function main() {
   const activePromises = new Set<Promise<void>>();
 
   for (const video of targetVideos) {
-    const promise = archivist.processVideo(video, {
-      force: values.force,
-      concurrency,
-    });
+    const promise = archivist
+      .processVideo(video, {
+        force: values.force,
+        concurrency,
+      })
+      .catch((error) => {
+        console.error(
+          `❌ Critical error processing video [${video.id}]: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
     activePromises.add(promise);
 
     promise.finally(() => activePromises.delete(promise));
