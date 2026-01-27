@@ -95,7 +95,6 @@ models = ["summarizer", "embed-small", "rerank"]
 [stacks.rag-full.overrides.summarizer]
 gpu_memory_utilization = 0.38
 max_model_len = 8192
-enable_tool_calling = true
 reasoning_parser = "qwen3"
 enforce_eager = true
 

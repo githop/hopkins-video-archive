@@ -7,6 +7,22 @@ const DELAY_MS = 2000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Consume the query async generator and extract the final answer.
+ */
+async function collectQueryResult(
+  archivist: FamilyArchivist,
+  prompt: string,
+): Promise<string> {
+  let answer = '';
+  for await (const chunk of archivist.query(prompt)) {
+    if (chunk.type === 'result') {
+      answer = chunk.answer;
+    }
+  }
+  return answer;
+}
+
 async function runEval() {
   const promptsFile = Bun.file(EVAL_PROMPTS_PATH);
   if (!(await promptsFile.exists())) {
@@ -29,16 +45,17 @@ async function runEval() {
     console.log(`\n--- [${item.id}] Starting: ${item.prompt} ---`);
 
     try {
-      const result = await archivist.ask(item.prompt);
+      const result = await collectQueryResult(archivist, item.prompt);
 
       markdown += `## ${item.id}: ${item.category}\n`;
       markdown += `**Prompt:** ${item.prompt}\n\n`;
       markdown += `**Expected:** ${item.expected}\n\n`;
       markdown += `### Result:\n${result}\n\n`;
       markdown += `---\n\n`;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(`Error running [${item.id}]:`, error);
-      markdown += `## ${item.id}: ${item.category}\n**Error:** ${error.message}\n\n---\n\n`;
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      markdown += `## ${item.id}: ${item.category}\n**Error:** ${message}\n\n---\n\n`;
     }
 
     console.log(`[${item.id}] Finished.`);

@@ -11,19 +11,22 @@ import { join } from 'node:path';
 import { ParticipantService, LocationService } from '@hop-hv-rag/core';
 import { getEmbedModel, getGenModel, getRerankModel } from '@hop-hv-rag/ai';
 import {
-  generateText,
   streamText,
   embed,
   rerank,
-  stepCountIs,
-  convertToModelMessages,
   type LanguageModel,
   type EmbeddingModel,
   type RerankingModel,
-  type UIMessage,
 } from 'ai';
-import { createSearchArchiveTool, type SearchProvider } from './tools/index.ts';
 import type { HybridResult } from './types.ts';
+import {
+  ParticipantSchema,
+  LocationSchema,
+  type Source,
+  type StreamChunk,
+  type Participant,
+  type Location,
+} from './schemas.ts';
 
 /**
  * Configuration
@@ -34,9 +37,9 @@ const REGISTRY_PATH = join(DATA_DIR, 'participant-registry.json');
 const LOCATION_REGISTRY_PATH = join(DATA_DIR, 'location-registry.json');
 
 /**
- * FamilyArchivist: Handles hybrid search and RAG synthesis.
+ * FamilyArchivist: Handles hybrid search and RAG synthesis with unified streaming API.
  */
-export class FamilyArchivist implements SearchProvider {
+export class FamilyArchivist {
   private db: ReturnType<typeof createDb>;
   private participantService: ParticipantService;
   private locationService: LocationService;
@@ -58,58 +61,170 @@ export class FamilyArchivist implements SearchProvider {
     ]);
   }
 
-  async ask(query: string): Promise<string> {
-    console.log(`🤖 Consulting the Family Archivist for: "${query}"...`);
+  /**
+   * Main entry point for the unified streaming API.
+   * Yields reasoning chunks during model thinking, then a final result chunk.
+   */
+  async *query(userQuery: string): AsyncGenerator<StreamChunk> {
+    // 1. Retrieve relevant scenes
+    const results = await this.retrieve(userQuery);
+    const sources = results ? await this.buildSources(results) : [];
+    const context = this.formatContextForLLM(sources);
 
-    const results = await this.retrieve(query);
-
-    if (!results || results.length === 0) {
-      const msg = 'No relevant scenes found in the archive.';
-      console.log(msg);
-      return msg;
+    if (sources.length === 0) {
+      yield {
+        type: 'result',
+        answer:
+          "I couldn't find any relevant scenes in the family archive for that query.",
+        sources: [],
+      };
+      return;
     }
 
-    const context = await this.formatContext(results);
-    console.log(`   📊 Context retrieved. Synthesizing answer...`);
-
-    const answer = await this.synthesize(query, context);
-
-    console.log('\n--- 🤖 Archivist Response ---\n');
-    console.log(answer);
-    console.log('\n----------------------------\n');
-
-    return answer;
-  }
-
-  async streamAsk(messages: UIMessage[]) {
-    const modelMessages = await convertToModelMessages(messages);
-
-    return streamText({
+    // 2. Stream generation with reasoning
+    const result = streamText({
       model: this.genModel,
-      system: [
-        'You are a professional Family Historian and Video Archivist.',
-        'Check your knowledge base using the `searchArchive` tool before answering any questions.',
-        'Only respond to questions using information from tool calls.',
-        'If no relevant information is found in the tool calls, respond, "I\'m sorry, I couldn\'t find any relevant scenes in the family archive for that."',
-        '',
-        'GUIDELINES:',
-        '1. Use ONLY the provided context to answer the question.',
-        '2. Be descriptive but concise.',
-        '3. CITATIONS: You MUST cite sources using Markdown links.',
-        '   - Use the specific timestamp from the TRANSCRIPT if available for maximum precision.',
-        '   - Format: [Video Title @ MM:SS](https://drive.google.com/file/d/DRIVE_ID)',
-        '   - Convert seconds from the transcript (e.g. [1079s]) to MM:SS format (e.g. 17:59).',
-        '4. Synthesize information from multiple videos when applicable.',
-        '5. The user will see visual cards for the results you find. You should still describe the most relevant ones in your text response.',
-      ].join('\n'),
-      messages: modelMessages,
-      stopWhen: stepCountIs(9),
-      tools: {
-        searchArchive: createSearchArchiveTool(this),
-      },
+      system: this.getSystemPrompt(context),
+      prompt: userQuery,
     });
+
+    // 3. Yield reasoning chunks and accumulate answer
+    let answer = '';
+
+    for await (const part of result.fullStream) {
+      if (part.type === 'reasoning-delta') {
+        yield { type: 'reasoning', text: part.text };
+      } else if (part.type === 'text-delta') {
+        answer += part.text;
+      }
+    }
+
+    // 4. Yield final result with answer and sources
+    yield { type: 'result', answer, sources };
   }
 
+  /**
+   * Build structured Source[] from hybrid search results.
+   * Fetches canonical participants and locations from junction tables.
+   */
+  private async buildSources(results: HybridResult[]): Promise<Source[]> {
+    const sources: Source[] = [];
+
+    for (const r of results) {
+      // Fetch canonical participants from junction table
+      const participantRows = this.db
+        .select({
+          id: people.id,
+          name: people.name,
+          type: people.type,
+        })
+        .from(people)
+        .innerJoin(sceneToPeople, sql`${sceneToPeople.personId} = ${people.id}`)
+        .where(sql`${sceneToPeople.sceneId} = ${r.id}`)
+        .all();
+
+      const participants: Participant[] = participantRows.map((p) =>
+        ParticipantSchema.parse(p),
+      );
+
+      // Fetch canonical locations from junction table
+      const locationRows = this.db
+        .select({
+          id: locations.id,
+          name: locations.name,
+          type: locations.type,
+        })
+        .from(locations)
+        .innerJoin(
+          sceneToLocations,
+          sql`${sceneToLocations.locationId} = ${locations.id}`,
+        )
+        .where(sql`${sceneToLocations.sceneId} = ${r.id}`)
+        .all();
+
+      const locs: Location[] = locationRows.map((l) => LocationSchema.parse(l));
+
+      // Format timestamp
+      const minutes = Math.floor(r.startTime / 60);
+      const seconds = Math.floor(r.startTime % 60);
+      const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+      sources.push({
+        sceneId: r.id,
+        sceneTitle: r.title,
+        summary: r.summary,
+        video: {
+          id: r.videoId,
+          title: r.videoTitle,
+          year: r.videoYear,
+          driveId: r.videoDriveFileId,
+        },
+        timestamp: {
+          startSeconds: r.startTime,
+          endSeconds: r.endTime,
+          formatted,
+        },
+        participants,
+        locations: locs,
+      });
+    }
+
+    return sources;
+  }
+
+  /**
+   * Convert structured Source[] to text for the LLM system prompt.
+   */
+  private formatContextForLLM(sources: Source[]): string {
+    if (sources.length === 0) return 'No relevant scenes found.';
+
+    return sources
+      .map((s) => {
+        const participantNames =
+          s.participants.map((p) => p.name).join(', ') || 'None identified';
+        const locationNames =
+          s.locations.map((l) => l.name).join(', ') || 'Unknown';
+
+        return [
+          `VIDEO: ${s.video.title}`,
+          `DRIVE_ID: ${s.video.driveId}`,
+          `YEAR: ${s.video.year || 'Unknown'}`,
+          `TIMESTAMP: ${s.timestamp.formatted}`,
+          `SCENE: ${s.sceneTitle}`,
+          `PARTICIPANTS: ${participantNames}`,
+          `LOCATIONS: ${locationNames}`,
+          `SUMMARY: ${s.summary}`,
+          `---`,
+        ].join('\n');
+      })
+      .join('\n\n');
+  }
+
+  /**
+   * System prompt for the archivist generation.
+   */
+  private getSystemPrompt(context: string): string {
+    return [
+      'You are a professional Family Historian and Video Archivist.',
+      "Analyze the provided archive fragments to answer the user's question.",
+      '',
+      'GUIDELINES:',
+      '1. Use ONLY the provided context to answer the question.',
+      "2. If the answer is not in the archive, say you don't have enough information.",
+      '3. Be descriptive but concise.',
+      '4. CITATIONS: You MUST cite sources using Markdown links.',
+      '   - Format: [Video Title @ MM:SS](https://drive.google.com/file/d/DRIVE_ID)',
+      '   - Use the TIMESTAMP from the context for precision.',
+      '5. Synthesize information from multiple videos when applicable.',
+      '',
+      'CONTEXT FROM ARCHIVE:',
+      context,
+    ].join('\n');
+  }
+
+  /**
+   * Retrieve relevant scenes using hybrid search.
+   */
   public async retrieve(query: string): Promise<HybridResult[] | null> {
     // 1. Detect Entities in Query
     const [detectedPeople, detectedLocations] = await Promise.all([
@@ -119,12 +234,12 @@ export class FamilyArchivist implements SearchProvider {
 
     if (detectedPeople.length > 0) {
       console.log(
-        `   👤 Detected people: ${detectedPeople.map((p) => p.name).join(', ')}`,
+        `   Detected people: ${detectedPeople.map((p) => p.name).join(', ')}`,
       );
     }
     if (detectedLocations.length > 0) {
       console.log(
-        `   📍 Detected locations: ${detectedLocations.map((l) => l.name).join(', ')}`,
+        `   Detected locations: ${detectedLocations.map((l) => l.name).join(', ')}`,
       );
     }
 
@@ -138,28 +253,9 @@ export class FamilyArchivist implements SearchProvider {
       return null;
     }
 
-    console.log(`   📊 Found ${results.length} relevant scenes.`);
+    console.log(`   Found ${results.length} relevant scenes.`);
 
     return results;
-  }
-
-  private getSystemPrompt(context: string): string {
-    return [
-      'You are a professional Family Historian and Video Archivist.',
-      "Analyze the provided archive fragments to answer the user's question.",
-      'GUIDELINES:',
-      '1. Use ONLY the provided context to answer the question.',
-      "2. If the answer is not in the archive, say you don't have enough information.",
-      '3. Be descriptive but concise.',
-      '4. CITATIONS: You MUST cite sources using Markdown links.',
-      '   - Use the specific timestamp from the TRANSCRIPT if available for maximum precision.',
-      '   - Format: [Video Title @ MM:SS](https://drive.google.com/file/d/DRIVE_ID)',
-      '   - Convert seconds from the transcript (e.g. [1079s]) to MM:SS format (e.g. 17:59).',
-      '5. Synthesize information from multiple videos when applicable.',
-      '',
-      'CONTEXT FROM ARCHIVE:',
-      context,
-    ].join('\n');
   }
 
   private async detectPeople(query: string) {
@@ -182,6 +278,39 @@ export class FamilyArchivist implements SearchProvider {
       .from(locations)
       .where(inArray(locations.name, names))
       .all();
+  }
+
+  /**
+   * Extract key terms from query for keyword boosting.
+   * Identifies quoted phrases and capitalized multi-word sequences (proper nouns).
+   */
+  private extractKeyTerms(query: string): string[] {
+    const terms: string[] = [];
+
+    // Match quoted phrases like "KH Talk"
+    const quoted = query.match(/"([^"]+)"/g);
+    if (quoted) {
+      terms.push(...quoted.map((q) => q.replace(/"/g, '')));
+    }
+
+    // Match capitalized sequences (potential proper nouns) like "KH Talk"
+    const caps = query.match(/[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)*/g);
+    if (caps) {
+      terms.push(...caps.filter((c) => c.length > 2));
+    }
+
+    return [...new Set(terms)];
+  }
+
+  /**
+   * Check if content contains any of the key terms (case-insensitive).
+   */
+  private contentContainsKeyTerms(
+    content: string,
+    keyTerms: string[],
+  ): boolean {
+    const lowerContent = content.toLowerCase();
+    return keyTerms.some((term) => lowerContent.includes(term.toLowerCase()));
   }
 
   private async hybridSearch(
@@ -220,8 +349,6 @@ export class FamilyArchivist implements SearchProvider {
       JOIN videos v ON v.id = s.video_id
     `;
 
-    // If person detected, we could filter or boost.
-    // For now, let's keep it broad but use the IDs for ranking later if needed.
     const vectorResults = await this.db.all<HybridResult>(sql.raw(vectorSql));
 
     // 2. FTS5 Keyword Search
@@ -254,7 +381,7 @@ export class FamilyArchivist implements SearchProvider {
     const fused = this.fuse(vectorResults, ftsResults);
 
     // 4. Neural Re-ranking
-    console.log(`   🧠 Re-ranking ${fused.length} candidates...`);
+    console.log(`   Re-ranking ${fused.length} candidates...`);
     const { ranking } = await rerank({
       model: this.rerankModel,
       query,
@@ -269,13 +396,24 @@ export class FamilyArchivist implements SearchProvider {
       fused[r.originalIndex].score = r.score;
     });
 
-    // Sort by new scores
+    // 5. Post-rerank keyword boost
+    // Boost scores for documents containing exact query key terms (proper nouns, quoted phrases)
+    const keyTerms = this.extractKeyTerms(query);
+    if (keyTerms.length > 0) {
+      const KEYWORD_BOOST = 1.3;
+      for (const result of fused) {
+        const content = `${result.title} ${result.summary} ${result.transcript}`;
+        if (this.contentContainsKeyTerms(content, keyTerms)) {
+          result.score = (result.score || 0) * KEYWORD_BOOST;
+        }
+      }
+    }
+
+    // Sort by boosted scores
     fused.sort((a, b) => (b.score || 0) - (a.score || 0));
 
-    // 5. Re-rank/Filter based on people and locations if detected
+    // 6. Additional boost for detected people and locations
     if (personIds.length > 0 || locationIds.length > 0) {
-      // We'll give a slight boost to results that actually contain the detected person or location
-      // in the junction tables
       for (const result of fused) {
         let boost = 1.0;
 
@@ -310,7 +448,7 @@ export class FamilyArchivist implements SearchProvider {
       return fused.sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 5);
     }
 
-    return fused;
+    return fused.slice(0, 5);
   }
 
   private fuse(
@@ -334,66 +472,6 @@ export class FamilyArchivist implements SearchProvider {
       .slice(0, 10) // Take top 10 for potential re-ranking
       .map(([id, score]) => ({ ...resultMap.get(id)!, score }));
   }
-
-  public async formatContext(results: HybridResult[]): Promise<string> {
-    const formatted = [];
-
-    for (const r of results) {
-      // Fetch canonical participants from the new junction table
-      const canonicals = this.db
-        .select({ name: people.name })
-        .from(people)
-        .innerJoin(sceneToPeople, sql`${sceneToPeople.personId} = ${people.id}`)
-        .where(sql`${sceneToPeople.sceneId} = ${r.id}`)
-        .all();
-
-      // Fetch canonical locations from the new junction table
-      const canonicalLocs = this.db
-        .select({ name: locations.name })
-        .from(locations)
-        .innerJoin(
-          sceneToLocations,
-          sql`${sceneToLocations.locationId} = ${locations.id}`,
-        )
-        .where(sql`${sceneToLocations.sceneId} = ${r.id}`)
-        .all();
-
-      const p = canonicals.map((c) => c.name).join(', ') || 'None identified';
-      const l =
-        canonicalLocs.map((c) => c.name).join(', ') ||
-        JSON.parse(r.videoLocations || '[]').join(', ');
-
-      const minutes = Math.floor(r.startTime / 60);
-      const seconds = Math.floor(r.startTime % 60);
-      const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-      formatted.push(
-        [
-          `VIDEO: ${r.videoTitle}`,
-          `DRIVE_ID: ${r.videoDriveFileId}`,
-          `YEAR: ${r.videoYear || 'Unknown'}`,
-          `TIMESTAMP: ${timeStr}`,
-          `SCENE: ${r.title}`,
-          `PARTICIPANTS (Normalized): ${p}`,
-          `LOCATIONS (Normalized): ${l}`,
-          `SUMMARY: ${r.summary}`,
-          `TRANSCRIPT: ${r.transcript}`,
-          `---`,
-        ].join('\n'),
-      );
-    }
-
-    return formatted.join('\n\n');
-  }
-
-  private async synthesize(query: string, context: string): Promise<string> {
-    const { text } = await generateText({
-      model: this.genModel,
-      system: this.getSystemPrompt(context),
-      prompt: `USER QUESTION: ${query}`,
-    });
-    return text;
-  }
 }
 
 /**
@@ -406,15 +484,41 @@ async function main() {
     process.exit(1);
   }
 
-  // Use summarizer for both if not specified, based on project constraints
   const archivist = new FamilyArchivist(
     getGenModel('summarizer'),
     getEmbedModel('embed-small'),
     getRerankModel('rerank'),
   );
-
   await archivist.init();
-  await archivist.ask(query);
+
+  console.log('Searching the archive...\n');
+
+  let reasoningStarted = false;
+
+  for await (const chunk of archivist.query(query)) {
+    if (chunk.type === 'reasoning') {
+      if (!reasoningStarted) {
+        process.stdout.write('Thinking');
+        reasoningStarted = true;
+      }
+      process.stdout.write('.');
+    } else if (chunk.type === 'result') {
+      if (reasoningStarted) {
+        console.log('\n');
+      }
+
+      console.log('--- Response ---\n');
+      console.log(chunk.answer);
+
+      if (chunk.sources.length > 0) {
+        console.log('\n--- Sources ---\n');
+        for (const s of chunk.sources) {
+          console.log(`- ${s.video.title} @ ${s.timestamp.formatted}`);
+          console.log(`  https://drive.google.com/file/d/${s.video.driveId}`);
+        }
+      }
+    }
+  }
 }
 
 if (import.meta.main) {
