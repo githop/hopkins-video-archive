@@ -17,9 +17,11 @@ async function main() {
 
   // Create a lookup for easy matching: "1995-2" -> "0B-..."
   const driveMap = new Map<string, string>();
+  const filenameMap = new Map<string, string>();
   for (const [filename, driveId] of Object.entries(mapping)) {
     const base = filename.replace(/\.[^/.]+$/, '');
     driveMap.set(base, driveId as string);
+    filenameMap.set(base, filename);
   }
 
   // 2. Scan Transcripts
@@ -50,7 +52,7 @@ async function main() {
           .insert(videos)
           .values({
             driveFileId,
-            filename: file,
+            filename: filenameMap.get(base)!,
             title: metadata.title,
             year: metadata.year,
             recordedAt: metadata.recordedAt,
