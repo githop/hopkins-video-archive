@@ -413,11 +413,11 @@ export class FamilyArchivist {
       JOIN videos v ON v.id = s.video_id
     `;
 
-    const vectorResults = await this.db.all<HybridResult>(sql.raw(vectorSql));
+    const vectorResults = this.db.all<HybridResult>(sql.raw(vectorSql));
 
     // 2. FTS5 Keyword Search
     const cleanQuery = query.replace(/[^\w\s]/g, ' ').trim();
-    const ftsResults = await this.db.all<HybridResult>(
+    const ftsResults = this.db.all<HybridResult>(
       sql.raw(`
       SELECT 
         s.id,
