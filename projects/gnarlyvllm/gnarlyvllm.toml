@@ -59,6 +59,8 @@ port = 8006
 [models.summarizer-bulk-14b.defaults]
 gpu_memory_utilization = 0.9
 max_model_len = 8192               # Good context length for batches
+enable_reasoning = true
+reasoning_parser = "deepseek_r1" 
 max_num_seqs = 16                  # Higher concurrency than 32B model
 enforce_eager = true               # Avoid CUDA graph overhead for varying lengths
 

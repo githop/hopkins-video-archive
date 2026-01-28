@@ -19,11 +19,12 @@ import { generateText, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import { eq, sql, inArray } from 'drizzle-orm';
 import { parseArgs } from 'node:util';
+import { resolve } from 'node:path';
 
 /**
  * Configuration & Constants
  */
-const DATA_DIR = `${import.meta.dir}/../../../data`;
+const DATA_DIR = resolve(process.cwd(), '../../data');
 const DB_PATH = `${DATA_DIR}/hv-rag.db`;
 const REGISTRY_PATH = `${DATA_DIR}/participant-registry.json`;
 const LOCATION_REGISTRY_PATH = `${DATA_DIR}/location-registry.json`;

@@ -186,6 +186,8 @@ export class FamilyArchivist {
           id: r.videoId,
           title: r.videoTitle,
           year: r.videoYear,
+          yearStart: r.videoYearStart,
+          yearEnd: r.videoYearEnd,
           driveId: r.videoDriveFileId,
         },
         timestamp: {
@@ -331,6 +333,15 @@ export class FamilyArchivist {
   }
 
   /**
+   * Detect a 4-digit year in the query string.
+   * Supports years from 1960-2029.
+   */
+  private detectYearInQuery(query: string): number | null {
+    const match = query.match(/\b(19[6-9]\d|20[0-2]\d)\b/);
+    return match ? parseInt(match[1], 10) : null;
+  }
+
+  /**
    * Extract key terms from query for keyword boosting.
    * Identifies quoted phrases and capitalized multi-word sequences (proper nouns).
    */
@@ -387,6 +398,8 @@ export class FamilyArchivist {
         s.transcript,
         v.title as videoTitle,
         v.year as videoYear,
+        v.year_start as videoYearStart,
+        v.year_end as videoYearEnd,
         v.participants as videoParticipants,
         v.locations as videoLocations,
         v.drive_file_id as videoDriveFileId
@@ -416,6 +429,8 @@ export class FamilyArchivist {
         s.transcript,
         v.title as videoTitle,
         v.year as videoYear,
+        v.year_start as videoYearStart,
+        v.year_end as videoYearEnd,
         v.participants as videoParticipants,
         v.locations as videoLocations,
         v.drive_file_id as videoDriveFileId
@@ -512,10 +527,36 @@ export class FamilyArchivist {
           result.score *= boost;
         }
       }
-      return fused.sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 5);
     }
 
-    return fused.slice(0, 5);
+    // 7. Temporal boosting based on year in query
+    const queryYear = this.detectYearInQuery(query);
+    if (queryYear) {
+      console.log(`   Detected year: ${queryYear}`);
+      for (const result of fused) {
+        const { videoYearStart, videoYearEnd } = result;
+        if (videoYearStart && videoYearEnd) {
+          // Check if query year falls within video's year range
+          if (queryYear >= videoYearStart && queryYear <= videoYearEnd) {
+            // Year is in range - boost
+            result.score = (result.score || 0) * 1.5;
+          } else {
+            // Calculate distance to nearest edge of range
+            const distance = Math.min(
+              Math.abs(queryYear - videoYearStart),
+              Math.abs(queryYear - videoYearEnd),
+            );
+            if (distance > 4) {
+              // More than 4 years off - penalty
+              result.score = (result.score || 0) * 0.5;
+            }
+            // Within 4 years: no change (neutral)
+          }
+        }
+      }
+    }
+
+    return fused.sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 5);
   }
 
   private fuse(

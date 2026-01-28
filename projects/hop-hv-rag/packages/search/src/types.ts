@@ -3,6 +3,8 @@ import type { Scene } from '@hop-hv-rag/db/schema';
 export interface HybridResult extends Scene {
   videoTitle: string;
   videoYear: number;
+  videoYearStart: number | null;
+  videoYearEnd: number | null;
   videoParticipants: string;
   videoLocations: string;
   videoDriveFileId: string;

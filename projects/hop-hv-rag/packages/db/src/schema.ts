@@ -15,6 +15,8 @@ export const videos = sqliteTable('videos', {
   title: text('title'),
   recordedAt: text('recorded_at'),
   year: integer('year'),
+  yearStart: integer('year_start'),
+  yearEnd: integer('year_end'),
   globalSummary: text('global_summary'),
   participants: text('participants'), // JSON array
   locations: text('locations'), // JSON array

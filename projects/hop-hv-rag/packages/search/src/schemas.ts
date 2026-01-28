@@ -44,6 +44,8 @@ export const SourceSchema = z.object({
     id: z.number(),
     title: z.string().nullable(),
     year: z.number().nullable(),
+    yearStart: z.number().nullable().optional(),
+    yearEnd: z.number().nullable().optional(),
     driveId: z.string(),
   }),
   timestamp: z.object({
