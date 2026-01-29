@@ -22,6 +22,7 @@
     "ingest:migrate-locations": "bun --cwd packages/ingest migrate-locations",
     "ingest:migrate-activities": "bun --cwd packages/ingest migrate-activities",
     "ingest:validate-registry": "bun --cwd packages/ingest validate-registry",
+    "ingest:rebuild-fts": "bun --cwd packages/ingest rebuild-fts",
     "search:rag": "bun --cwd packages/search rag",
     "search:eval": "bun --cwd packages/search run-eval.ts",
     "ui:dev": "bun --cwd packages/ui dev --host 0.0.0.0",

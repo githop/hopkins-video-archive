@@ -3,7 +3,7 @@ import { CONFIG } from "./config";
 import { Logger } from "./logger";
 
 /**
- * FFmpeg utility for audio extraction
+ * FFmpeg utility for audio extraction and thumbnail generation
  */
 export const FFMPEG = {
   /**
@@ -52,6 +52,42 @@ export const FFMPEG = {
       return outputPath;
     } else {
       throw new Error(`FFmpeg failed with code ${exitCode}`);
+    }
+  },
+
+  /**
+   * Extract a thumbnail from a video at a specific timestamp.
+   * Uses input seeking (-ss before -i) for performance.
+   * Outputs 320x180 JPEG with letterboxing to maintain aspect ratio.
+   */
+  extractThumbnail: async (
+    videoPath: string,
+    timestamp: number,
+    outputPath: string
+  ): Promise<string> => {
+    Logger.info(`Extracting thumbnail at ${timestamp}s from ${videoPath}`);
+
+    const proc = Bun.spawn([
+      "ffmpeg",
+      "-ss", String(timestamp),        // Seek before input (fast)
+      "-i", videoPath,
+      "-vframes", "1",                 // Single frame
+      "-q:v", String(CONFIG.THUMBNAIL.QUALITY),
+      "-vf", `scale=${CONFIG.THUMBNAIL.WIDTH}:${CONFIG.THUMBNAIL.HEIGHT}:force_original_aspect_ratio=decrease,pad=${CONFIG.THUMBNAIL.WIDTH}:${CONFIG.THUMBNAIL.HEIGHT}:(ow-iw)/2:(oh-ih)/2:black`,
+      "-y",                            // Overwrite
+      outputPath
+    ], {
+      stdout: "inherit",
+      stderr: "pipe",
+    });
+
+    const exitCode = await proc.exited;
+
+    if (exitCode === 0) {
+      Logger.info(`Thumbnail created: ${outputPath}`);
+      return outputPath;
+    } else {
+      throw new Error(`FFmpeg thumbnail extraction failed with code ${exitCode}`);
     }
   }
 };

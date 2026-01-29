@@ -18,6 +18,8 @@
     "transcribe": "bun run src/transcribe.ts",
     "organize": "bun run src/organize.ts",
     "auth": "bun run src/authenticate.ts",
-    "map": "bun run src/map.ts"
+    "map": "bun run src/map.ts",
+    "thumbs": "bun run src/thumbnails.ts",
+    "thumbs:dry": "bun run src/thumbnails.ts --dry-run"
   }
 }

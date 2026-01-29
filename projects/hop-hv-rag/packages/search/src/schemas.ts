@@ -40,6 +40,7 @@ export const SourceSchema = z.object({
   sceneId: z.number(),
   sceneTitle: z.string().nullable(),
   summary: z.string(),
+  thumbnailUrl: z.string(),
   video: z.object({
     id: z.number(),
     title: z.string().nullable(),

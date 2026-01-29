@@ -45,6 +45,10 @@ const REGISTRY_PATH = join(DATA_DIR, 'participant-registry.json');
 const LOCATION_REGISTRY_PATH = join(DATA_DIR, 'location-registry.json');
 const ACTIVITY_REGISTRY_PATH = join(DATA_DIR, 'activity-registry.json');
 
+// Base URL for constructing absolute thumbnail URLs
+// Update this to match your server address when UI runs on a different machine
+const SERVER_BASE_URL = 'http://local.gnarlybox-ai:3200';
+
 /**
  * FamilyArchivist: Handles hybrid search and RAG synthesis with unified streaming API.
  */
@@ -178,10 +182,16 @@ export class FamilyArchivist {
       const seconds = Math.floor(r.startTime % 60);
       const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
+      // Build absolute thumbnail URL from relative path
+      const thumbnailUrl = r.thumbnailPath
+        ? `${SERVER_BASE_URL}${r.thumbnailPath}`
+        : '';
+
       sources.push({
         sceneId: r.id,
         sceneTitle: r.title,
         summary: r.summary,
+        thumbnailUrl,
         video: {
           id: r.videoId,
           title: r.videoTitle,
@@ -374,6 +384,33 @@ export class FamilyArchivist {
     return keyTerms.some((term) => lowerContent.includes(term.toLowerCase()));
   }
 
+  /**
+   * Construct a robust FTS5 query from user input.
+   * - Detects filename-like patterns (e.g. 1996-97-1.m4v) and treats them as exact phrases
+   * - Preserves prefix operators (*) for partial matching
+   * - Preserves quoted phrases for exact matching
+   * - BM25 scoring naturally down-weights common terms, so no stopword filtering needed
+   */
+  private constructFtsQuery(query: string): string {
+    const filenameMatch = query.match(/\b\d{4}-[\w-.]+\b/g);
+    let processedQuery = query;
+
+    if (filenameMatch) {
+      filenameMatch.forEach((filename) => {
+        // Create a phrase version: "1996 97 1 m4v"
+        const phrase = `"${filename.replace(/[^\w]/g, ' ')}"`;
+        processedQuery = processedQuery.replace(filename, phrase);
+      });
+    }
+
+    // Clean up special chars that FTS5 dislikes, but preserve:
+    // - alphanumeric characters
+    // - spaces
+    // - quotes (for phrase queries)
+    // - asterisk (for prefix queries like "swim*")
+    return processedQuery.replace(/[^\w\s"*]/g, ' ').trim();
+  }
+
   private async hybridSearch(
     query: string,
     personIds: number[],
@@ -396,6 +433,7 @@ export class FamilyArchivist {
         s.title,
         s.summary,
         s.transcript,
+        s.thumbnail_path as thumbnailPath,
         v.title as videoTitle,
         v.year as videoYear,
         v.year_start as videoYearStart,
@@ -415,8 +453,8 @@ export class FamilyArchivist {
 
     const vectorResults = this.db.all<HybridResult>(sql.raw(vectorSql));
 
-    // 2. FTS5 Keyword Search
-    const cleanQuery = query.replace(/[^\w\s]/g, ' ').trim();
+    // 2. FTS5 Keyword Search (BM25 naturally down-weights common terms)
+    const ftsQuery = this.constructFtsQuery(query);
     const ftsResults = this.db.all<HybridResult>(
       sql.raw(`
       SELECT 
@@ -427,6 +465,7 @@ export class FamilyArchivist {
         s.title,
         s.summary,
         s.transcript,
+        s.thumbnail_path as thumbnailPath,
         v.title as videoTitle,
         v.year as videoYear,
         v.year_start as videoYearStart,
@@ -437,13 +476,12 @@ export class FamilyArchivist {
       FROM fts_scenes f
       JOIN scenes s ON s.id = f.id
       JOIN videos v ON v.id = s.video_id
-      WHERE fts_scenes MATCH '${cleanQuery.replace(/'/g, "''")}'
+      WHERE fts_scenes MATCH '${ftsQuery.replace(/'/g, "''")}'
       ORDER BY bm25(fts_scenes)
       LIMIT 40
     `),
     );
 
-    // 3. Reciprocal Rank Fusion
     const fused = this.fuse(vectorResults, ftsResults);
 
     // 4. Neural Re-ranking

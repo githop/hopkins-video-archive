@@ -9,6 +9,23 @@ export const SourceCard: React.FC<SourceCardProps> = ({ source }) => {
 
   return (
     <div className="flex-none w-72 bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+      {/* Thumbnail - 4:3 aspect ratio */}
+      <a
+        href={driveUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="relative w-full pt-[75%] bg-gray-100 block"
+      >
+        <img
+          src={source.thumbnailUrl}
+          alt={source.sceneTitle || 'Scene thumbnail'}
+          className="absolute inset-0 w-full h-full object-cover"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+        />
+      </a>
+
       <div className="p-4 flex flex-col h-full">
         {/* Header */}
         <div className="flex justify-between items-start mb-2">

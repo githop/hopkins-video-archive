@@ -41,6 +41,7 @@ export const scenes = sqliteTable('scenes', {
   videoId: integer('video_id')
     .references(() => videos.id)
     .notNull(),
+  videoFilename: text('video_filename'),
   startTime: real('start_time').notNull(),
   endTime: real('end_time').notNull(),
   title: text('title'),
@@ -49,6 +50,7 @@ export const scenes = sqliteTable('scenes', {
   participants: text('participants'), // JSON array
   locations: text('locations'), // JSON array
   activities: text('activities'), // JSON array
+  thumbnailPath: text('thumbnail_path'),
 });
 
 // 4. PEOPLE (Canonical Entities)

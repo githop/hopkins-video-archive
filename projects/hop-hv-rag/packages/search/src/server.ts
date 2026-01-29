@@ -3,11 +3,46 @@ import { cors } from 'hono/cors';
 import { FamilyArchivist } from './rag-query.ts';
 import { createStreamResponse } from './stream-utils.ts';
 import { getGenModel, getEmbedModel, getRerankModel } from '@hop-hv-rag/ai';
+import { join } from 'node:path';
 
 const app = new Hono();
 
-// Enable CORS for the UI
-app.use('/*', cors());
+// Enable CORS for the UI - allow all origins for development
+app.use(
+  '/*',
+  cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowHeaders: ['Content-Type'],
+  }),
+);
+
+// Serve thumbnail images manually for better control
+const DATA_DIR = join(import.meta.dir, '../../../data');
+const THUMBNAILS_DIR = join(DATA_DIR, 'thumbnails');
+
+app.get('/thumbnails/*', async (c) => {
+  const path = c.req.path.replace('/thumbnails/', '');
+  const filePath = join(THUMBNAILS_DIR, path);
+  console.log(`[Thumbnail Request] ${c.req.method} ${c.req.url}`);
+  console.log(`[Thumbnail Path] Looking for: ${filePath}`);
+
+  const file = Bun.file(filePath);
+
+  if (!(await file.exists())) {
+    console.log(`[Thumbnail] 404 Not Found: ${filePath}`);
+    return c.json({ error: 'Thumbnail not found' }, 404);
+  }
+
+  console.log(`[Thumbnail] 200 OK: ${filePath}`);
+  return c.newResponse(file.stream(), {
+    status: 200,
+    headers: {
+      'Content-Type': 'image/jpeg',
+      'Cache-Control': 'public, max-age=86400',
+    },
+  });
+});
 
 const archivist = new FamilyArchivist(
   getGenModel('summarizer'),

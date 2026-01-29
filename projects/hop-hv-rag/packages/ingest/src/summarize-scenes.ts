@@ -157,7 +157,7 @@ class VideoArchivist {
       );
     }
 
-    await this.processChunksInParallel(video.id, chunks, options.concurrency);
+    await this.processChunksInParallel(video, chunks, options.concurrency);
     await this.aggregateVideoMetadata(video.id);
   }
 
@@ -241,14 +241,14 @@ class VideoArchivist {
    * Orchestrates parallel execution of AI requests
    */
   private async processChunksInParallel(
-    videoId: number,
+    video: Video,
     chunks: Chunk[],
     limit: number,
   ) {
     const activePromises = new Set<Promise<void>>();
 
     for (const chunk of chunks) {
-      const promise = this.summarizeChunk(videoId, chunk);
+      const promise = this.summarizeChunk(video, chunk);
       activePromises.add(promise);
 
       // Remove itself from the set when done
@@ -288,7 +288,7 @@ class VideoArchivist {
   /**
    * Individual worker unit: AI request + Database save
    */
-  private async summarizeChunk(videoId: number, chunk: Chunk) {
+  private async summarizeChunk(video: Video, chunk: Chunk) {
     const { startTime, endTime, text, rawSegments } = chunk;
 
     try {
@@ -326,7 +326,8 @@ class VideoArchivist {
       const [sceneResult] = await this.db
         .insert(scenes)
         .values({
-          videoId,
+          videoId: video.id,
+          videoFilename: video.filename,
           startTime,
           endTime,
           title: data.title,

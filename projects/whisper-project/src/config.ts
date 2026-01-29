@@ -41,6 +41,15 @@ export const CONFIG = {
   TRANSCRIPTS_DIR: join(ROOT, "transcripts"),
   MAPPING_FILE: join(ROOT, "mapping.json"),
 
+  // --- Thumbnail Settings ---
+  HV_RAG_DB: join(ROOT, "../hop-hv-rag/data/hv-rag.db"),
+  THUMBNAILS_DIR: join(ROOT, "../hop-hv-rag/data/thumbnails"),
+  THUMBNAIL: {
+    WIDTH: 320,
+    HEIGHT: 240,
+    QUALITY: 2,          // FFmpeg -q:v (1-5, lower=better)
+  },
+
   // --- Worker Settings ---
   PYTHON_INTERPRETER: join(ROOT, ".venv/bin/python"),
   WORKER_PATH: join(ROOT, "python/worker.py"),

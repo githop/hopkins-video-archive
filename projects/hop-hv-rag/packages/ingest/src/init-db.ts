@@ -44,6 +44,7 @@ async function main() {
     CREATE TABLE IF NOT EXISTS scenes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       video_id INTEGER NOT NULL REFERENCES videos(id),
+      video_filename TEXT,
       start_time REAL NOT NULL,
       end_time REAL NOT NULL,
       title TEXT,
@@ -51,7 +52,8 @@ async function main() {
       transcript TEXT,
       participants TEXT,
       locations TEXT,
-      activities TEXT
+      activities TEXT,
+      thumbnail_path TEXT
     )
   `);
 
@@ -156,10 +158,13 @@ async function main() {
   console.log('Creating FTS5 table...');
   // Virtual table for Full-Text Search
   // We index the title, summary, transcript, participants, locations, and activities
+  // Using Porter tokenizer for English stemming (swim/swimming/swims all match)
+  // Combined with unicode61 for proper unicode handling and case folding
   db.run(sql`
     CREATE VIRTUAL TABLE IF NOT EXISTS fts_scenes USING fts5(
       id UNINDEXED,
       video_id UNINDEXED,
+      video_filename,
       title,
       summary,
       transcript,
@@ -167,31 +172,32 @@ async function main() {
       locations,
       activities,
       content='scenes',
-      content_rowid='id'
+      content_rowid='id',
+      tokenize='porter unicode61'
     );
   `);
 
   // Triggers to keep FTS in sync with the scenes table
   db.run(sql`
     CREATE TRIGGER IF NOT EXISTS scenes_ai AFTER INSERT ON scenes BEGIN
-      INSERT INTO fts_scenes(rowid, id, video_id, title, summary, transcript, participants, locations, activities)
-      VALUES (new.id, new.id, new.video_id, new.title, new.summary, new.transcript, new.participants, new.locations, new.activities);
+      INSERT INTO fts_scenes(rowid, id, video_id, video_filename, title, summary, transcript, participants, locations, activities)
+      VALUES (new.id, new.id, new.video_id, new.video_filename, new.title, new.summary, new.transcript, new.participants, new.locations, new.activities);
     END;
   `);
 
   db.run(sql`
     CREATE TRIGGER IF NOT EXISTS scenes_ad AFTER DELETE ON scenes BEGIN
-      INSERT INTO fts_scenes(fts_scenes, rowid, id, video_id, title, summary, transcript, participants, locations, activities)
-      VALUES('delete', old.id, old.id, old.video_id, old.title, old.summary, old.transcript, old.participants, old.locations, old.activities);
+      INSERT INTO fts_scenes(fts_scenes, rowid, id, video_id, video_filename, title, summary, transcript, participants, locations, activities)
+      VALUES('delete', old.id, old.id, old.video_id, old.video_filename, old.title, old.summary, old.transcript, old.participants, old.locations, old.activities);
     END;
   `);
 
   db.run(sql`
     CREATE TRIGGER IF NOT EXISTS scenes_au AFTER UPDATE ON scenes BEGIN
-      INSERT INTO fts_scenes(fts_scenes, rowid, id, video_id, title, summary, transcript, participants, locations, activities)
-      VALUES('delete', old.id, old.id, old.video_id, old.title, old.summary, old.transcript, old.participants, old.locations, old.activities);
-      INSERT INTO fts_scenes(rowid, id, video_id, title, summary, transcript, participants, locations, activities)
-      VALUES (new.id, new.id, new.video_id, new.title, new.summary, new.transcript, new.participants, new.locations, new.activities);
+      INSERT INTO fts_scenes(fts_scenes, rowid, id, video_id, video_filename, title, summary, transcript, participants, locations, activities)
+      VALUES('delete', old.id, old.id, old.video_id, old.video_filename, old.title, old.summary, old.transcript, old.participants, old.locations, old.activities);
+      INSERT INTO fts_scenes(rowid, id, video_id, video_filename, title, summary, transcript, participants, locations, activities)
+      VALUES (new.id, new.id, new.video_id, new.video_filename, new.title, new.summary, new.transcript, new.participants, new.locations, new.activities);
     END;
   `);
 
