@@ -35,6 +35,7 @@ import {
   type Location,
   type Activity,
 } from './schemas.ts';
+import { Spinner } from './spinner.ts';
 
 /**
  * Configuration
@@ -93,6 +94,7 @@ export class FamilyArchivist {
         answer:
           "I couldn't find any relevant scenes in the family archive for that query.",
         sources: [],
+        usedSourceIds: [],
       };
       return;
     }
@@ -115,8 +117,11 @@ export class FamilyArchivist {
       }
     }
 
-    // 4. Yield final result with answer and sources
-    yield { type: 'result', answer, sources };
+    // 4. Extract which citations were actually used
+    const usedSourceIds = this.extractUsedCitations(answer, sources);
+
+    // 5. Yield final result with answer and sources
+    yield { type: 'result', answer, sources, usedSourceIds };
   }
 
   /**
@@ -126,7 +131,7 @@ export class FamilyArchivist {
   private async buildSources(results: HybridResult[]): Promise<Source[]> {
     const sources: Source[] = [];
 
-    for (const r of results) {
+    for (const [index, r] of results.entries()) {
       // Fetch canonical participants from junction table
       const participantRows = this.db
         .select({
@@ -189,6 +194,7 @@ export class FamilyArchivist {
 
       sources.push({
         sceneId: r.id,
+        citationId: index + 1, // Assign [1], [2], [3], etc.
         sceneTitle: r.title,
         summary: r.summary,
         thumbnailUrl,
@@ -230,6 +236,7 @@ export class FamilyArchivist {
           s.activities.map((a) => a.name).join(', ') || 'None identified';
 
         return [
+          `SOURCE [${s.citationId}]`,
           `VIDEO: ${s.video.title}`,
           `DRIVE_ID: ${s.video.driveId}`,
           `YEAR: ${s.video.year || 'Unknown'}`,
@@ -255,14 +262,29 @@ export class FamilyArchivist {
       '',
       'GUIDELINES:',
       '1. Use ONLY the provided context to answer the question.',
-      "2. If the answer is not in the archive, say you don't have enough information.",
-      '3. Be descriptive but concise.',
-      '4. You may reference videos by title and timestamp in prose (e.g., "In the 1998-99-12 video at 6:23...") but do NOT create markdown links - source links are provided separately.',
-      '5. Synthesize information from multiple videos when applicable.',
+      '2. Cite sources using [1], [2], [3] etc. when referencing information.',
+      '3. You may cite multiple sources in a single sentence: "Greg plays football [1] and later swims [2]."',
+      '4. Cite at the end of sentences or clauses where the information appears.',
+      '5. Be descriptive but concise.',
       '',
       'CONTEXT FROM ARCHIVE:',
       context,
     ].join('\n');
+  }
+
+  /**
+   * Extract which citation IDs were actually used in the answer text.
+   */
+  private extractUsedCitations(answer: string, sources: Source[]): number[] {
+    const citationRegex = /\[(\d+)\]/g;
+    const matches = [...answer.matchAll(citationRegex)];
+    const citedIds = matches.map((m) => parseInt(m[1], 10));
+
+    // Filter to only valid citation IDs (1 to sources.length)
+    const validIds = citedIds.filter((id) => id >= 1 && id <= sources.length);
+
+    // Return unique, sorted citation IDs
+    return [...new Set(validIds)].sort((a, b) => a - b);
   }
 
   /**
@@ -640,27 +662,52 @@ async function main() {
   console.log('Searching the archive...\n');
 
   let reasoningStarted = false;
+  const spinner = new Spinner('Thinking');
 
   for await (const chunk of archivist.query(query)) {
     if (chunk.type === 'reasoning') {
       if (!reasoningStarted) {
-        process.stdout.write('Thinking');
+        spinner.start();
         reasoningStarted = true;
       }
-      process.stdout.write('.');
     } else if (chunk.type === 'result') {
       if (reasoningStarted) {
-        console.log('\n');
+        spinner.stop();
       }
 
       console.log('--- Response ---\n');
       console.log(chunk.answer);
 
       if (chunk.sources.length > 0) {
-        console.log('\n--- Sources ---\n');
-        for (const s of chunk.sources) {
-          console.log(`- ${s.video.title} @ ${s.timestamp.formatted}`);
-          console.log(`  https://drive.google.com/file/d/${s.video.driveId}`);
+        // Group sources by used vs unused
+        const usedSources = chunk.sources.filter((s) =>
+          chunk.usedSourceIds.includes(s.citationId),
+        );
+        const unusedSources = chunk.sources.filter(
+          (s) => !chunk.usedSourceIds.includes(s.citationId),
+        );
+
+        if (usedSources.length > 0) {
+          console.log('\n--- Cited Sources ---\n');
+          for (const s of usedSources) {
+            console.log(
+              `[${s.citationId}] ${s.video.title} @ ${s.timestamp.formatted}`,
+            );
+            console.log(`  ${s.sceneTitle}`);
+            console.log(
+              `  https://drive.google.com/file/d/${s.video.driveId}\n`,
+            );
+          }
+        }
+
+        if (unusedSources.length > 0) {
+          console.log('\n--- Additional Context ---\n');
+          for (const s of unusedSources) {
+            console.log(
+              `[${s.citationId}] ${s.video.title} @ ${s.timestamp.formatted}`,
+            );
+            console.log(`  ${s.sceneTitle}`);
+          }
         }
       }
     }

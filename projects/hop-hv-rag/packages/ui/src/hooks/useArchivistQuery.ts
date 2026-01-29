@@ -8,6 +8,7 @@ interface UseArchivistQueryResult {
   reasoning: string;
   answer: string;
   sources: Source[];
+  usedSourceIds: number[];
   error: string | null;
   search: (query: string) => Promise<void>;
   reset: () => void;
@@ -18,6 +19,7 @@ export function useArchivistQuery(): UseArchivistQueryResult {
   const [reasoning, setReasoning] = useState('');
   const [answer, setAnswer] = useState('');
   const [sources, setSources] = useState<Source[]>([]);
+  const [usedSourceIds, setUsedSourceIds] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const reset = useCallback(() => {
@@ -25,6 +27,7 @@ export function useArchivistQuery(): UseArchivistQueryResult {
     setReasoning('');
     setAnswer('');
     setSources([]);
+    setUsedSourceIds([]);
     setError(null);
   }, []);
 
@@ -70,6 +73,7 @@ export function useArchivistQuery(): UseArchivistQueryResult {
             } else if (chunk.type === 'result') {
               setAnswer(chunk.answer);
               setSources(chunk.sources);
+              setUsedSourceIds(chunk.usedSourceIds || []);
               setPhase('complete');
             }
           }
@@ -82,5 +86,14 @@ export function useArchivistQuery(): UseArchivistQueryResult {
     [reset],
   );
 
-  return { phase, reasoning, answer, sources, error, search, reset };
+  return {
+    phase,
+    reasoning,
+    answer,
+    sources,
+    usedSourceIds,
+    error,
+    search,
+    reset,
+  };
 }

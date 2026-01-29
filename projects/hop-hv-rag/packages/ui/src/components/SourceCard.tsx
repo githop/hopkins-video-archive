@@ -2,13 +2,28 @@ import type { Source } from '@hop-hv-rag/search';
 
 interface SourceCardProps {
   source: Source;
+  isUsed: boolean;
 }
 
-export const SourceCard: React.FC<SourceCardProps> = ({ source }) => {
+export const SourceCard: React.FC<SourceCardProps> = ({ source, isUsed }) => {
   const driveUrl = `https://drive.google.com/file/d/${source.video.driveId}`;
 
   return (
-    <div className="flex-none w-72 bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+    <div
+      className={`flex-none w-72 bg-white rounded-xl border overflow-hidden shadow-sm hover:shadow-md transition-shadow ${isUsed ? 'border-blue-500 ring-2 ring-blue-100' : 'border-gray-200'}`}
+    >
+      {/* Citation Badge - Absolute positioned */}
+      <div className="absolute top-2 left-2 z-10">
+        <span className="text-xs font-medium px-2 py-1 bg-blue-500 text-white rounded-full">
+          [{source.citationId}]
+        </span>
+        {isUsed && (
+          <span className="ml-1 text-xs font-medium px-2 py-1 bg-green-500 text-white rounded-full">
+            Cited
+          </span>
+        )}
+      </div>
+
       {/* Thumbnail - 4:3 aspect ratio */}
       <a
         href={driveUrl}

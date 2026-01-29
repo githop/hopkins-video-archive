@@ -38,6 +38,7 @@ export type Activity = z.infer<typeof ActivitySchema>;
  */
 export const SourceSchema = z.object({
   sceneId: z.number(),
+  citationId: z.number(), // [1], [2], [3], etc.
   sceneTitle: z.string().nullable(),
   summary: z.string(),
   thumbnailUrl: z.string(),
@@ -73,6 +74,7 @@ export const StreamChunkSchema = z.discriminatedUnion('type', [
     type: z.literal('result'),
     answer: z.string(),
     sources: z.array(SourceSchema),
+    usedSourceIds: z.array(z.number()),
   }),
 ]);
 

@@ -5,7 +5,7 @@ import { SourceList } from './components/SourceList';
 
 function App() {
   const [input, setInput] = useState('');
-  const { phase, reasoning, answer, sources, error, search } =
+  const { phase, reasoning, answer, sources, usedSourceIds, error, search } =
     useArchivistQuery();
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -49,7 +49,9 @@ function App() {
             <div className="bg-white rounded-lg p-4 border border-gray-200 prose prose-slate max-w-none">
               <Streamdown>{answer}</Streamdown>
             </div>
-            {sources.length > 0 && <SourceList sources={sources} />}
+            {sources.length > 0 && (
+              <SourceList sources={sources} usedSourceIds={usedSourceIds} />
+            )}
           </div>
         )}
 
