@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { serveStatic } from 'hono/bun';
 import { cors } from 'hono/cors';
 import { FamilyArchivist } from './rag-query.ts';
 import { createStreamResponse } from './stream-utils.ts';
@@ -17,33 +18,24 @@ app.use(
   }),
 );
 
-// Serve thumbnail images manually for better control
+// Serve thumbnail images using Hono's serveStatic for Bun
 const DATA_DIR = join(import.meta.dir, '../../../data');
 const THUMBNAILS_DIR = join(DATA_DIR, 'thumbnails');
 
-app.get('/thumbnails/*', async (c) => {
-  const path = c.req.path.replace('/thumbnails/', '');
-
-  // Security: Prevent directory traversal
-  if (path.includes('..')) {
-    return c.json({ error: 'Invalid path' }, 400);
+app.use('/thumbnails/*', async (c, next) => {
+  await next();
+  if (c.res.ok) {
+    c.res.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
   }
-
-  const filePath = join(THUMBNAILS_DIR, path);
-  const file = Bun.file(filePath);
-
-  if (!(await file.exists())) {
-    return c.json({ error: 'Thumbnail not found' }, 404);
-  }
-
-  return c.newResponse(file.stream(), {
-    status: 200,
-    headers: {
-      'Content-Type': 'image/jpeg',
-      'Cache-Control': 'public, max-age=31536000, immutable',
-    },
-  });
 });
+
+app.get(
+  '/thumbnails/*',
+  serveStatic({
+    root: THUMBNAILS_DIR,
+    rewriteRequestPath: (path) => path.replace(/^\/thumbnails/, ''),
+  }),
+);
 
 const archivist = new FamilyArchivist(
   getGenModel('summarizer'),
@@ -72,10 +64,16 @@ app.post('/api/query', async (c) => {
   return createStreamResponse(generator);
 });
 
+// Serve the compiled frontend
+const UI_DIST = join(import.meta.dir, '../../ui/dist');
+app.use('/*', serveStatic({ root: UI_DIST }));
+app.get('*', serveStatic({ path: join(UI_DIST, 'index.html') }));
+
 const port = 3200;
-console.log(`Search server running at http://localhost:${port}`);
+const hostname = '0.0.0.0';
 
 export default {
   port,
+  hostname,
   fetch: app.fetch,
 };

@@ -25,8 +25,8 @@
     "ingest:rebuild-fts": "bun --cwd packages/ingest rebuild-fts",
     "search:rag": "bun --cwd packages/search rag",
     "search:eval": "bun --cwd packages/search run-eval.ts",
-    "ui:dev": "bun --cwd packages/ui dev --host 0.0.0.0",
     "ui:server": "bun --cwd packages/search server",
+    "start": "bun run ui:build && bun run ui:server",
     "typecheck": "tsc --noEmit",
     "format": "bun prettier . --write",
     "test": "bun test"
