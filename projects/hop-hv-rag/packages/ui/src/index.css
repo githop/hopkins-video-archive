@@ -1,3 +1,132 @@
 @import 'tailwindcss';
 @plugin "@tailwindcss/typography";
 @source "../node_modules/streamdown/dist/*.js";
+
+/* ===========================================
+   KANAGAWA THEME - Dragon (Dark) & Lotus (Light)
+   =========================================== */
+
+@layer base {
+  /* DEFAULT (LOTUS / LIGHT MODE) */
+  :root {
+    --bg-default: #f2ecbc;
+    --bg-surface: #e5ddb0;
+    --bg-surface-hover: #dcd5ac;
+    --bg-input: #e4d794;
+    --bg-code: #e7dba0;
+
+    --text-primary: #545464;
+    --text-secondary: #716e61;
+    --text-muted: #8a8980;
+    --text-accent: #c84053;
+
+    --border-color: #dcd5ac;
+    --border-strong: #d5cea3;
+
+    --primary-action: #6f894e;
+    --primary-fg: #ffffff;
+    --secondary-action: #c84053;
+    --success-accent: #597b75;
+  }
+
+  /* DARK MODE (DRAGON) */
+  [data-mode='dragon'] {
+    --bg-default: #12120f;
+    --bg-surface: #1d1c19;
+    --bg-surface-hover: #282727;
+    --bg-input: #0d0c0c;
+    --bg-code: #181616;
+
+    --text-primary: #c5c9c5;
+    --text-secondary: #a6a69c;
+    --text-muted: #737c73;
+    --text-accent: #ffa066;
+
+    --border-color: #625e5a;
+    --border-strong: #393836;
+
+    --primary-action: #6a9589;
+    --primary-fg: #12120f;
+    --secondary-action: #e46876;
+    --success-accent: #98bb6c;
+  }
+}
+
+/* ===========================================
+   TAILWIND V4 THEME CONFIGURATION
+   =========================================== */
+
+@theme {
+  /* Font Families */
+  --font-serif: 'Crimson Text', Georgia, serif;
+  --font-sans: system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  /* Semantic Background Colors */
+  --color-background: var(--bg-default);
+  --color-background-surface: var(--bg-surface);
+  --color-background-hover: var(--bg-surface-hover);
+  --color-background-input: var(--bg-input);
+  --color-background-code: var(--bg-code);
+
+  /* Semantic Text Colors */
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-accent: var(--text-accent);
+
+  /* Semantic Border Colors */
+  --color-border: var(--border-color);
+  --color-border-strong: var(--border-strong);
+
+  /* Semantic Action Colors */
+  --color-action-primary: var(--primary-action);
+  --color-action-secondary: var(--secondary-action);
+  --color-action-success: var(--success-accent);
+  --color-action-fg: var(--primary-fg);
+
+  /* Raw Kanagawa Palette (for specialized one-offs) */
+  --color-kanagawa-dragon-black1: #12120f;
+  --color-kanagawa-dragon-black2: #1d1c19;
+  --color-kanagawa-dragon-white: #c5c9c5;
+  --color-kanagawa-dragon-red: #c4746e;
+
+  --color-kanagawa-lotus-white3: #f2ecbc;
+  --color-kanagawa-lotus-ink1: #545464;
+  --color-kanagawa-lotus-red: #c84053;
+
+  /* Additional Kanagawa Dragon palette colors */
+  --color-kanagawa-dragon-black0: #0d0c0c;
+  --color-kanagawa-dragon-black3: #181616;
+  --color-kanagawa-dragon-black4: #282727;
+  --color-kanagawa-dragon-black5: #393836;
+  --color-kanagawa-dragon-black6: #625e5a;
+  --color-kanagawa-dragon-gray: #a6a69c;
+  --color-kanagawa-dragon-ash: #737c73;
+
+  /* Additional Kanagawa Wave palette colors */
+  --color-kanagawa-wave-aqua1: #6a9589;
+  --color-kanagawa-wave-red: #e46876;
+  --color-kanagawa-spring-green: #98bb6c;
+  --color-kanagawa-surimi-orange: #ffa066;
+
+  /* Additional Lotus palette colors */
+  --color-kanagawa-lotus-white0: #d5cea3;
+  --color-kanagawa-lotus-white1: #dcd5ac;
+  --color-kanagawa-lotus-white2: #e5ddb0;
+  --color-kanagawa-lotus-white4: #e7dba0;
+  --color-kanagawa-lotus-white5: #e4d794;
+  --color-kanagawa-lotus-gray: #716e61;
+  --color-kanagawa-lotus-gray2: #8a8980;
+  --color-kanagawa-lotus-green: #6f894e;
+  --color-kanagawa-lotus-aqua: #597b75;
+}
+
+/* ===========================================
+   GLOBAL STYLES
+   =========================================== */
+
+@layer base {
+  body {
+    @apply bg-background text-text-primary transition-colors duration-300;
+  }
+}

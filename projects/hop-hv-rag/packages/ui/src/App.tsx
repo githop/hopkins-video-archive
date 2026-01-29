@@ -1,89 +1,97 @@
 import { useState } from 'react';
-import { Streamdown } from 'streamdown';
 import { useArchivistQuery } from './hooks/useArchivistQuery';
-import { SourceList } from './components/SourceList';
+import { Header } from './components/Header';
+import { SearchBar } from './components/SearchBar';
+import { ReasoningBlock } from './components/ReasoningBlock';
+import { AnswerSection } from './components/AnswerSection';
+import { SourceGrid } from './components/SourceGrid';
 
 function App() {
   const [input, setInput] = useState('');
   const { phase, reasoning, answer, sources, usedSourceIds, error, search } =
     useArchivistQuery();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (input.trim()) {
-      search(input.trim());
-      setInput('');
-    }
+  const handleSearch = (query: string) => {
+    search(query);
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      <header className="p-4 border-b border-gray-200 bg-white">
-        <h1 className="text-xl font-semibold text-gray-800">
-          Family Archive Search
-        </h1>
-      </header>
+      <Header />
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-4">
-        {phase === 'idle' && (
-          <p className="text-center text-gray-500 mt-8">
-            Ask a question about your family videos...
-          </p>
-        )}
-
-        {phase === 'thinking' && (
-          <div className="bg-gray-100 rounded-lg p-4 mb-4">
-            <div className="text-sm text-gray-500 mb-2">Thinking...</div>
-            {reasoning && (
-              <div className="prose prose-sm text-gray-600 italic max-w-none">
-                <Streamdown>{reasoning}</Streamdown>
+      <main className="flex-1 flex flex-col">
+        {/* Search Section - Full page when idle, compact when results shown */}
+        <div
+          className={`
+          px-6 py-12 transition-all duration-500
+          ${phase === 'idle' ? 'flex-1 flex flex-col justify-center' : 'bg-background-surface border-b border-border'}
+        `}
+        >
+          <div className="max-w-3xl mx-auto w-full">
+            {/* Show prominent search when idle or thinking */}
+            {(phase === 'idle' || phase === 'thinking') && (
+              <div className="text-center mb-8">
+                <h2 className="font-serif text-3xl md:text-4xl text-text-primary mb-3">
+                  Search Your Archive
+                </h2>
+                <p className="text-text-secondary">
+                  Ask questions about your family videos in natural language
+                </p>
               </div>
             )}
-          </div>
-        )}
 
-        {phase === 'complete' && (
-          <div className="space-y-4">
-            <div className="bg-white rounded-lg p-4 border border-gray-200 prose prose-slate max-w-none">
-              <Streamdown>{answer}</Streamdown>
+            {/* Search Input */}
+            <SearchBar
+              value={input}
+              onChange={setInput}
+              onSubmit={handleSearch}
+              disabled={phase === 'thinking'}
+              showSuggestions={phase === 'idle'}
+            />
+          </div>
+        </div>
+
+        {/* Results Section */}
+        {phase !== 'idle' && (
+          <div className="flex-1 px-6 py-8">
+            <div className="max-w-3xl mx-auto space-y-8">
+              {/* Error State */}
+              {phase === 'error' && (
+                <div className="bg-red-500/10 border border-red-500/30 text-red-600 rounded-lg p-4">
+                  <strong>Error:</strong> {error}
+                </div>
+              )}
+
+              {/* Thinking State - Reasoning Block */}
+              {(phase === 'thinking' || phase === 'complete') && reasoning && (
+                <ReasoningBlock
+                  key={`reasoning-${phase}`}
+                  reasoning={reasoning}
+                  phase={phase}
+                />
+              )}
+
+              {/* Complete State */}
+              {phase === 'complete' && (
+                <>
+                  {/* Answer */}
+                  {answer && <AnswerSection answer={answer} />}
+
+                  {/* Sources */}
+                  {sources.length > 0 && (
+                    <SourceGrid
+                      sources={sources}
+                      usedSourceIds={usedSourceIds}
+                    />
+                  )}
+                </>
+              )}
             </div>
-            {sources.length > 0 && (
-              <SourceList sources={sources} usedSourceIds={usedSourceIds} />
-            )}
-          </div>
-        )}
-
-        {phase === 'error' && (
-          <div className="bg-red-50 text-red-700 rounded-lg p-4">
-            Error: {error}
           </div>
         )}
       </main>
-
-      {/* Input Form */}
-      <form
-        onSubmit={handleSubmit}
-        className="p-4 border-t border-gray-200 bg-white"
-      >
-        <div className="flex gap-2">
-          <input
-            value={input}
-            onChange={(e) => setInput((e.target as HTMLInputElement).value)}
-            placeholder="Ask about your family videos..."
-            className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            disabled={phase === 'thinking'}
-          />
-          <button
-            type="submit"
-            disabled={phase === 'thinking'}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Search
-          </button>
-        </div>
-      </form>
     </div>
   );
 }
