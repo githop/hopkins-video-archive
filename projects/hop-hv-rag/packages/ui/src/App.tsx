@@ -8,33 +8,17 @@ import { SourceGrid } from './components/SourceGrid';
 
 function App() {
   const [input, setInput] = useState('');
-  const [submittedQuery, setSubmittedQuery] = useState('');
-  const {
-    phase,
-    reasoning,
-    answer,
-    sources,
-    usedSourceIds,
-    error,
-    search,
-    reset,
-  } = useArchivistQuery();
+  const { phase, reasoning, answer, sources, usedSourceIds, error, search } =
+    useArchivistQuery();
 
   const handleSearch = (query: string) => {
-    setSubmittedQuery(query);
     search(query);
-  };
-
-  const handleNewSearch = () => {
-    reset();
-    setInput('');
-    setSubmittedQuery('');
   };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      <Header onNewSearch={phase !== 'idle' ? handleNewSearch : undefined} />
+      <Header />
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col">
@@ -60,19 +44,11 @@ function App() {
 
             {/* Search Input */}
             <SearchBar
-              value={
-                phase === 'idle' || phase === 'thinking'
-                  ? input
-                  : submittedQuery
-              }
-              onChange={
-                phase === 'idle' || phase === 'thinking' ? setInput : undefined
-              }
+              value={input}
+              onChange={setInput}
               onSubmit={handleSearch}
-              mode={
-                phase === 'idle' || phase === 'thinking' ? 'input' : 'display'
-              }
               disabled={phase === 'thinking'}
+              showSuggestions={phase === 'idle'}
             />
           </div>
         </div>
@@ -89,16 +65,17 @@ function App() {
               )}
 
               {/* Thinking State - Reasoning Block */}
-              {phase === 'thinking' && reasoning && (
-                <ReasoningBlock reasoning={reasoning} />
+              {(phase === 'thinking' || phase === 'complete') && reasoning && (
+                <ReasoningBlock
+                  key={`reasoning-${phase}`}
+                  reasoning={reasoning}
+                  phase={phase}
+                />
               )}
 
               {/* Complete State */}
               {phase === 'complete' && (
                 <>
-                  {/* Reasoning (if available) */}
-                  {reasoning && <ReasoningBlock reasoning={reasoning} />}
-
                   {/* Answer */}
                   {answer && <AnswerSection answer={answer} />}
 

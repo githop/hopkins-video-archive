@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { Source, StreamChunk } from '@hop-hv-rag/search';
 
-type Phase = 'idle' | 'thinking' | 'complete' | 'error';
+export type Phase = 'idle' | 'thinking' | 'complete' | 'error';
 
 interface UseArchivistQueryResult {
   phase: Phase;

@@ -1,61 +1,42 @@
-import { useSyncExternalStore, useCallback } from 'react';
-
-// Get current system theme
-function getSystemTheme(): 'lotus' | 'dragon' {
-  if (typeof window === 'undefined') return 'lotus';
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'dragon'
-    : 'lotus';
-}
-
-// Subscribe to system theme changes
-function subscribeThemeChange(callback: () => void): () => void {
-  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-  mediaQuery.addEventListener('change', callback);
-  return () => mediaQuery.removeEventListener('change', callback);
-}
+import { useState } from 'react';
 
 export function ThemeToggle() {
-  // Track system theme reactively
-  const systemTheme = useSyncExternalStore<'lotus' | 'dragon'>(
-    subscribeThemeChange,
-    getSystemTheme,
-    () => 'lotus', // Server snapshot
-  );
+  // Initialize from OS setting only once
+  const [theme, setTheme] = useState<'lotus' | 'dragon'>(() => {
+    const systemTheme =
+      typeof window === 'undefined'
+        ? 'lotus'
+        : window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dragon'
+          : 'lotus';
 
-  // Apply theme to document whenever it changes
-  const applyTheme = useCallback((theme: 'lotus' | 'dragon') => {
-    document.documentElement.setAttribute('data-mode', theme);
-  }, []);
+    // Apply initial theme immediately
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-mode', systemTheme);
+    }
 
-  // Apply current system theme
-  applyTheme(systemTheme);
-
-  const getCurrentTheme = (): 'lotus' | 'dragon' => {
-    const mode = document.documentElement.getAttribute('data-mode');
-    return mode === 'dragon' ? 'dragon' : 'lotus';
-  };
+    return systemTheme;
+  });
 
   const toggleTheme = () => {
-    const current = getCurrentTheme();
-    const newTheme = current === 'lotus' ? 'dragon' : 'lotus';
-    applyTheme(newTheme);
+    const newTheme = theme === 'lotus' ? 'dragon' : 'lotus';
+    setTheme(newTheme);
+    // Apply directly in callback - no effect needed
+    document.documentElement.setAttribute('data-mode', newTheme);
   };
-
-  const currentTheme = getCurrentTheme();
 
   return (
     <button
       onClick={toggleTheme}
       className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
-      aria-label={`Switch to ${currentTheme === 'lotus' ? 'dragon' : 'lotus'} theme`}
+      aria-label={`Switch to ${theme === 'lotus' ? 'dragon' : 'lotus'} theme`}
     >
       <span className="text-xs uppercase tracking-wide">Current Theme:</span>
       <span className="font-semibold">
-        {currentTheme === 'lotus' ? 'LOTUS' : 'DRAGON'}
+        {theme === 'lotus' ? 'LOTUS' : 'DRAGON'}
       </span>
       <span className="text-lg" aria-hidden="true">
-        {currentTheme === 'lotus' ? '☀️' : '🌙'}
+        {theme === 'lotus' ? '☀️' : '🌙'}
       </span>
     </button>
   );
