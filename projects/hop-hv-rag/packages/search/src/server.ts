@@ -23,23 +23,24 @@ const THUMBNAILS_DIR = join(DATA_DIR, 'thumbnails');
 
 app.get('/thumbnails/*', async (c) => {
   const path = c.req.path.replace('/thumbnails/', '');
-  const filePath = join(THUMBNAILS_DIR, path);
-  console.log(`[Thumbnail Request] ${c.req.method} ${c.req.url}`);
-  console.log(`[Thumbnail Path] Looking for: ${filePath}`);
 
+  // Security: Prevent directory traversal
+  if (path.includes('..')) {
+    return c.json({ error: 'Invalid path' }, 400);
+  }
+
+  const filePath = join(THUMBNAILS_DIR, path);
   const file = Bun.file(filePath);
 
   if (!(await file.exists())) {
-    console.log(`[Thumbnail] 404 Not Found: ${filePath}`);
     return c.json({ error: 'Thumbnail not found' }, 404);
   }
 
-  console.log(`[Thumbnail] 200 OK: ${filePath}`);
   return c.newResponse(file.stream(), {
     status: 200,
     headers: {
       'Content-Type': 'image/jpeg',
-      'Cache-Control': 'public, max-age=86400',
+      'Cache-Control': 'public, max-age=31536000, immutable',
     },
   });
 });

@@ -6,6 +6,16 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   server: {
     allowedHosts: ['local.gnarlybox-ai'],
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3200',
+        changeOrigin: true,
+      },
+      '/thumbnails': {
+        target: 'http://localhost:3200',
+        changeOrigin: true,
+      },
+    },
   },
   plugins: [react(), tailwindcss()],
 });

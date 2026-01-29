@@ -46,10 +46,6 @@ const REGISTRY_PATH = join(DATA_DIR, 'participant-registry.json');
 const LOCATION_REGISTRY_PATH = join(DATA_DIR, 'location-registry.json');
 const ACTIVITY_REGISTRY_PATH = join(DATA_DIR, 'activity-registry.json');
 
-// Base URL for constructing absolute thumbnail URLs
-// Update this to match your server address when UI runs on a different machine
-const SERVER_BASE_URL = 'http://local.gnarlybox-ai:3200';
-
 /**
  * FamilyArchivist: Handles hybrid search and RAG synthesis with unified streaming API.
  */
@@ -187,10 +183,8 @@ export class FamilyArchivist {
       const seconds = Math.floor(r.startTime % 60);
       const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-      // Build absolute thumbnail URL from relative path
-      const thumbnailUrl = r.thumbnailPath
-        ? `${SERVER_BASE_URL}${r.thumbnailPath}`
-        : '';
+      // Use relative thumbnail path directly
+      const thumbnailUrl = r.thumbnailPath || '';
 
       sources.push({
         sceneId: r.id,
