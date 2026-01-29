@@ -6,7 +6,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "rag": "bun src/rag-query.ts",
+    "rag": "bun src/cli.ts",
     "server": "bun --hot src/server.ts"
   },
   "dependencies": {
@@ -14,7 +14,7 @@
     "@hop-hv-rag/core": "workspace:*",
     "@hop-hv-rag/db": "workspace:*",
     "ai": "latest",
-    "drizzle-orm": "latest",
+    "drizzle-orm": "0.36.4",
     "hono": "^4.11.4",
     "zod": "latest"
   }

@@ -28,7 +28,7 @@
     "@hop-hv-rag/core": "workspace:*",
     "@hop-hv-rag/ai": "workspace:*",
     "ai": "latest",
-    "drizzle-orm": "latest",
+    "drizzle-orm": "0.36.4",
     "zod": "latest"
   }
 }

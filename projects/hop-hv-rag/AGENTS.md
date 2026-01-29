@@ -43,7 +43,8 @@ Curiosity is encouraged, but data integrity is paramount. Before performing any 
 - **ESM only**: Use extensioned imports (e.g., `import { foo } from './bar.ts'`).
 - **Idiomatic Bun**: Prefer Bun primitives (`Bun.file`, `Bun.sqlite`, `Bun.spawn`, `Bun.env`, etc.).
 - **Async/Await**: Standard for all I/O and AI operations.
-- **Type Safety**: Strictly avoid `any`. Use Zod for runtime validation and Drizzle `$infer` for DB types. NEVER use type assertions (`as Type`).
+- **Type Safety**: Strictly avoid `any`. Use Zod for runtime validation and Drizzle `$infer` for DB types for sql queries. NEVER use type assertions (`as Type`).
+- **Generics**: Use the generic arguments provided by Drizzle and other libraries (e.g., `db.select().from(table).all<Type>()`) instead of type assertions.
 - **Entry Points**: Use `if (import.meta.main)` for CLI scripts.
 
 ### Database & Vectors

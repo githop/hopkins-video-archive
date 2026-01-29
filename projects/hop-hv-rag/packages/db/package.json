@@ -6,10 +6,12 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema.ts"
+    "./schema": "./src/schema.ts",
+    "./validation": "./src/validation.ts"
   },
   "dependencies": {
-    "drizzle-orm": "latest",
-    "sqlite-vec": "latest"
+    "drizzle-orm": "0.36.4",
+    "sqlite-vec": "latest",
+    "zod": "latest"
   }
 }

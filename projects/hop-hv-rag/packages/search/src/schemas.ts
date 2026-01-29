@@ -1,37 +1,17 @@
 import { z } from 'zod';
+import {
+  PersonSchema,
+  LocationSchema,
+  ActivitySchema,
+  type Person,
+  type Location,
+  type Activity,
+} from '@hop-hv-rag/db/validation';
 
-/**
- * Schema for a participant in a scene
- */
-export const ParticipantSchema = z.object({
-  id: z.number(),
-  name: z.string(),
-  type: z.enum(['PERSON', 'ROLE']),
-});
-
-export type Participant = z.infer<typeof ParticipantSchema>;
-
-/**
- * Schema for a location in a scene
- */
-export const LocationSchema = z.object({
-  id: z.number(),
-  name: z.string(),
-  type: z.enum(['PLACE', 'SETTING', 'DISCARD']),
-});
-
-export type Location = z.infer<typeof LocationSchema>;
-
-/**
- * Schema for an activity in a scene
- */
-export const ActivitySchema = z.object({
-  id: z.number(),
-  name: z.string(),
-  type: z.enum(['SPORT', 'RECREATION', 'HOLIDAY', 'MILESTONE', 'DISCARD']),
-});
-
-export type Activity = z.infer<typeof ActivitySchema>;
+// Re-export schemas for backward compatibility
+// Person is called Participant in the search domain
+export { PersonSchema as ParticipantSchema, LocationSchema, ActivitySchema };
+export type { Person as Participant, Location, Activity };
 
 /**
  * Schema for a source (scene) returned from the archive search
@@ -55,7 +35,7 @@ export const SourceSchema = z.object({
     endSeconds: z.number(),
     formatted: z.string(), // "MM:SS"
   }),
-  participants: z.array(ParticipantSchema),
+  participants: z.array(PersonSchema),
   locations: z.array(LocationSchema),
   activities: z.array(ActivitySchema),
 });
