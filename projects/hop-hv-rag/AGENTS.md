@@ -1,69 +1,60 @@
 # AGENTS.md - hop-hv-rag
 
-## Project Overview
+This document defines the architecture, domains, and conventions of the `hop-hv-rag` project. It serves as a manual for AI agents to autonomously investigate, test, and improve the system.
 
-hop-hv-rag is a RAG (Retrieval-Augmented Generation) application designed for private home video collections. It processes transcription data from WhisperX, extracts semantic scenes using vLLM, indexes them with `sqlite-vec` in a local SQLite database, and provides a semantic search interface.
+## 1. Project Domains
 
-## Tech Stack
+### Ingestion Domain
 
-- **Runtime**: Bun
-- **Language**: TypeScript (strict mode)
-- **Database**: SQLite (via Bun `bun:sqlite` and Drizzle ORM)
-- **Vector Search**: `sqlite-vec` extension
-- **AI SDK**: Vercel AI SDK with OpenAI-compatible provider (vLLM)
-- **Validation**: Zod
-- **ID Generation**: nanoid (for readable prefixes where applicable)
+The ingestion pipeline transforms raw transcription data into indexed, semantic scenes.
 
-## Monorepo Structure
+- **Iterative Workflow**: Tools are designed to run either on a single video (surgical iteration) or in batch.
+- **Process**: Includes scene extraction, summarization, embedding, and entity canonicalization.
+- **Testing**: When improving logic (e.g., prompt refinement), iterate on small batches or single files using the `--file` flag to verify impact before full-scale processing.
 
-```
-hop-hv-rag/
-├── packages/
-│   ├── db/                 # Drizzle schema, migrations, and Bun SQLite client
-│   │   └── src/
-│   │       ├── schema.ts   # Table definitions
-│   │       └── index.ts    # DB client initialization
-│   ├── ai/                 # AI SDK configuration and vLLM integration
-│   │   └── src/
-│   │       └── index.ts    # vLLM client initialization
-│   ├── core/               # Shared logic: Metadata parsing, filename regex
-│   │   └── src/
-│   │       ├── metadata.ts # Filename parsing
-│   │       └── index.ts
-│   ├── ingest/             # CLI for processing transcription JSONs
-│   │   └── src/
-│   │       ├── init-db.ts  # Database initialization
-│   │       └── summarize-scenes.ts # Scene extraction and summarization
-│   └── search/             # CLI for RAG queries
-│       └── src/
-│           └── rag-query.ts # RAG search implementation
-├── data/                   # Local storage for SQLite DB and registry files
-│   ├── hv-rag.db           # SQLite database file
-│   └── mapping.json        # Filename -> driveFileId map
-├── AGENTS.md               # Project conventions
-├── package.json            # Workspace root
-└── tsconfig.json           # Global TS config
-```
+### Retrieval Domain
 
-## Conventions
+The retrieval pipeline handles user queries and generates cited responses.
+
+- **Search Strategy**: A hybrid approach using Vector Search (`sqlite-vec`), Full-Text Search (`FTS5`), and Reciprocal Rank Fusion (RRF), followed by neural reranking.
+- **RAG Synthesis**: Uses detected entities and temporal context to generate streaming, cited answers.
+
+## 2. Agent Agency & Investigation
+
+Agents are encouraged to leverage the environment to test assumptions and investigate failures:
+
+- **Database Inspection**: Query `data/hv-rag.db` directly to analyze relations, check indexing status, or verify data consistency.
+- **Asset Access**: Inspect raw assets, including WhisperX transcripts, thumbnails, and entity registries. These serve as the ground truth for debugging RAG results.
+- **Prototyping**: Write and execute inline Bun/TypeScript scripts to test logic, verify regex, or perform ad-hoc analysis (e.g., checking entity distribution).
+
+### Mutation & Transparency Protocol
+
+Curiosity is encouraged, but data integrity is paramount. Before performing any mutation to the database or registry assets:
+
+1.  **Identify**: Clearly state the inconsistency or error you've discovered.
+2.  **Describe**: Explain the intended transformation and show the code/SQL that will perform it.
+3.  **Back Up**: Proactively suggest or perform a backup of the asset (e.g., `cp data/registry.json data/registry.json.bak`).
+4.  **Permission**: Obtain explicit user approval before executing any mutation.
+
+## 3. Conventions
 
 ### Code Style
 
-- **ESM only**: No CommonJS.
-- **Extensioned imports**: Prefer extensioned imports (e.g., `import { foo } from './bar.ts'`).
-- **Idiomatic Bun**: Use idiomatic Bun primitives (`Bun.file`, `Bun.sqlite`, `Bun.spawn`, `Bun.env`, etc.).
+- **ESM only**: Use extensioned imports (e.g., `import { foo } from './bar.ts'`).
+- **Idiomatic Bun**: Prefer Bun primitives (`Bun.file`, `Bun.sqlite`, `Bun.spawn`, `Bun.env`, etc.).
 - **Async/Await**: Standard for all I/O and AI operations.
-- **No `any`**: Strictly avoid `any`. Use `unknown` or define specific interfaces.
-- **Type Safety**: NEVER use type assertions (`as Type`). Use Zod schemas for runtime validation and type inference, especially for AI outputs and external I/O. Use Drizzle's `$inferSelect` and `$inferInsert` for database record types.
+- **Type Safety**: Strictly avoid `any`. Use Zod for runtime validation and Drizzle `$infer` for DB types. NEVER use type assertions (`as Type`).
+- **Entry Points**: Use `if (import.meta.main)` for CLI scripts.
 
 ### Database & Vectors
 
-- **Drizzle ORM**: Used for ALL standard relational table interactions and schema management. Access the database via the `@hop-hv-rag/db` package.
-- **Generics**: Use the generic arguments provided by Drizzle and other libraries (e.g., `db.select().from(table).all<Type>()`) instead of type assertions.
-- **Integer PKs**: Use `integer PRIMARY KEY AUTOINCREMENT` for primary keys to ensure direct compatibility with `sqlite-vec`'s `rowid`.
-- **Vector Search**: Use `sqlite-vec` virtual tables (`vec0`) via raw SQL templates (`sql` from `drizzle-orm`).
+- **Drizzle ORM**: Used for relational table interactions and schema management.
+- **Raw SQL**: Use `sql` templates for `sqlite-vec` (vector distance) and `FTS5` (BM25 scoring) operations.
+- **Integer PKs**: Use `integer PRIMARY KEY AUTOINCREMENT` for compatibility with `sqlite-vec`'s `rowid`.
+- **Junction Tables**: Use explicit junction tables for entity relationships (people, locations, activities).
 
-### Workflow
+## 4. Improvement Guidelines
 
-- **Checkpoint-driven**: Every significant implementation step must be verified before proceeding to the next.
-- **Verification Scripts**: Each phase should have a corresponding verification script (e.g., `verify-db.ts`, `verify-ingest.ts`).
+1.  **Iterate Surgically**: When modifying ingestion logic, test on a single video first.
+2.  **Don't Guess, Test**: Use the DB and file system to verify assumptions before proposing code changes.
+3.  **Verify with Eval**: Use the project's evaluation scripts (`search:eval`) to ensure improvements don't introduce regressions.
