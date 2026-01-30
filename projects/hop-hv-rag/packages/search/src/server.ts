@@ -120,10 +120,6 @@ app.get('*', serveStatic({ path: join(UI_DIST, 'index.html') }));
 
 const hostname = '0.0.0.0';
 
-console.log(`Archive Server starting on http://${hostname}:${PORT}`);
-console.log(`Using DATA_DIR: ${DATA_DIR}`);
-console.log(`Serving UI from: ${UI_DIST}`);
-
 export default {
   port: PORT,
   hostname,

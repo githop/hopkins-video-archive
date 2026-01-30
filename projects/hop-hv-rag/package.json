@@ -27,7 +27,6 @@
     "search:eval": "bun --cwd packages/search run-eval.ts",
     "ui:server": "bun --cwd packages/search server",
     "ui:build": "bun --cwd packages/ui build",
-    "search:build-exe": "bun build packages/search/src/server.ts --compile --outfile hv-archive-server",
     "start": "bun run ui:build && bun run ui:server",
     "typecheck": "tsc --noEmit",
     "format": "bun prettier . --write",

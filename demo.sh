@@ -12,7 +12,7 @@ PROJECT_ROOT="/home/githop/hopkins-video-archive"
 DOTENV="$PROJECT_ROOT/.env"
 
 # --- Default Configuration ---
-ARCHIVE_PORT=3200
+ARCHIVE_PORT=4876
 
 # 1. Load Environment
 if [ -f "$DOTENV" ]; then
@@ -42,18 +42,14 @@ echo "📦 Building Frontend..."
 cd "$PROJECT_ROOT/projects/hop-hv-rag/packages/ui"
 bun run build
 
-# 4. Compile Server SFE
-echo "🔨 Compiling Standalone Server..."
-cd "$PROJECT_ROOT/projects/hop-hv-rag"
-bun run search:build-exe
-
-# 5. Start Archive Server
+# 4. Start Archive Server
 echo "🌐 Starting Search Server on port $ARCHIVE_PORT..."
 # Kill any existing server on this port
 fuser -k $ARCHIVE_PORT/tcp > /dev/null 2>&1 || true
 
-# Run SFE with explicit flags from the project directory
-./hv-archive-server \
+# Run server directly with bun
+cd "$PROJECT_ROOT/projects/hop-hv-rag"
+bun run packages/search/src/server.ts \
   --port "$ARCHIVE_PORT" \
   --data "$PROJECT_ROOT/projects/hop-hv-rag/data" \
   --ui "$PROJECT_ROOT/projects/hop-hv-rag/packages/ui/dist" &
@@ -72,7 +68,7 @@ podman run -d --name cf-archive-demo \
 echo ""
 echo "--------------------------------------------------------"
 echo "✅ ARCHIVE IS LIVE!"
-echo "Public Link: https://archive.yourdomain.com"
+echo "Public Link: https://hv-rag.githop.com"
 echo "Internal Port: $ARCHIVE_PORT"
 echo "--------------------------------------------------------"
 echo "Server logs will appear below. Press [ENTER] to shut down."
