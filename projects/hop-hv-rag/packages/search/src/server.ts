@@ -42,6 +42,33 @@ const PORT = parseInt(
   typeof values.port === 'string' ? values.port : '3200',
   10,
 );
+const THUMBNAILS_DIR = join(DATA_DIR, 'thumbnails');
+
+// Initialize services and database with explicit paths
+const dbPath = join(DATA_DIR, 'hv-rag.db');
+const participantPath = join(DATA_DIR, 'participant-registry.json');
+const locationPath = join(DATA_DIR, 'location-registry.json');
+const activityPath = join(DATA_DIR, 'activity-registry.json');
+
+const db = createDb(dbPath);
+const participantService = new ParticipantService(participantPath);
+const locationService = new LocationService(locationPath);
+const activityService = new ActivityService(activityPath);
+
+// Serve thumbnail images using Hono's serveStatic for Bun
+
+const archivist = new FamilyArchivist(
+  getGenModel('summarizer'),
+  getEmbedModel('embed-small'),
+  getRerankModel('rerank'),
+  db,
+  participantService,
+  locationService,
+  activityService,
+);
+
+// Initialize archivist (loads registries)
+await archivist.init();
 
 const app = new Hono();
 
@@ -54,9 +81,6 @@ app.use(
     allowHeaders: ['Content-Type'],
   }),
 );
-
-// Serve thumbnail images using Hono's serveStatic for Bun
-const THUMBNAILS_DIR = join(DATA_DIR, 'thumbnails');
 
 app.use('/thumbnails/*', async (c, next) => {
   await next();
@@ -72,30 +96,6 @@ app.get(
     rewriteRequestPath: (path) => path.replace(/^\/thumbnails/, ''),
   }),
 );
-
-// Initialize services and database with explicit paths
-const dbPath = join(DATA_DIR, 'hv-rag.db');
-const participantPath = join(DATA_DIR, 'participant-registry.json');
-const locationPath = join(DATA_DIR, 'location-registry.json');
-const activityPath = join(DATA_DIR, 'activity-registry.json');
-
-const db = createDb(dbPath);
-const participantService = new ParticipantService(participantPath);
-const locationService = new LocationService(locationPath);
-const activityService = new ActivityService(activityPath);
-
-const archivist = new FamilyArchivist(
-  getGenModel('summarizer'),
-  getEmbedModel('embed-small'),
-  getRerankModel('rerank'),
-  db,
-  participantService,
-  locationService,
-  activityService,
-);
-
-// Initialize archivist (loads registries)
-await archivist.init();
 
 /**
  * Unified query endpoint.

@@ -49,10 +49,7 @@ fuser -k $ARCHIVE_PORT/tcp > /dev/null 2>&1 || true
 
 # Run server directly with bun
 cd "$PROJECT_ROOT/projects/hop-hv-rag"
-bun run packages/search/src/server.ts \
-  --port "$ARCHIVE_PORT" \
-  --data "$PROJECT_ROOT/projects/hop-hv-rag/data" \
-  --ui "$PROJECT_ROOT/projects/hop-hv-rag/packages/ui/dist" &
+bun run packages/search/src/server.ts --port "$ARCHIVE_PORT" &
 SERVER_PID=$!
 
 # 6. Start Tunnel
