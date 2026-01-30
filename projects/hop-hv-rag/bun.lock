@@ -21,12 +21,17 @@
       "dependencies": {
         "@ai-sdk/google": "^3.0.2",
         "@ai-sdk/openai-compatible": "latest",
+        "@hop-hv-rag/core": "workspace:*",
         "ai": "latest",
+        "zod": "latest",
       },
     },
     "packages/core": {
       "name": "@hop-hv-rag/core",
       "version": "1.0.0",
+      "dependencies": {
+        "pino": "latest",
+      },
     },
     "packages/db": {
       "name": "@hop-hv-rag/db",

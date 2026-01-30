@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { parseArgs } from 'node:util';
 import { createDb } from '@hop-hv-rag/db';
 import {
   ParticipantService,
@@ -6,7 +7,15 @@ import {
   ActivityService,
   logger,
 } from '@hop-hv-rag/core';
-import { getGenModel, getEmbedModel, getRerankModel } from '@hop-hv-rag/ai';
+import {
+  getGenModel,
+  getEmbedModel,
+  getRerankModel,
+  resolveConfig,
+  logModelConfig,
+  parseArgsModelOptions,
+  parseCliToModelConfig,
+} from '@hop-hv-rag/ai';
 import { FamilyArchivist } from './archivist.ts';
 import { Spinner } from './spinner.ts';
 
@@ -14,11 +23,21 @@ import { Spinner } from './spinner.ts';
  * CLI Entry Point for running RAG queries from the command line.
  */
 async function main() {
-  const query = Bun.argv.slice(2).join(' ');
+  const { values, positionals } = parseArgs({
+    args: Bun.argv.slice(2),
+    options: parseArgsModelOptions,
+    allowPositionals: true,
+  });
+
+  const query = positionals.join(' ');
   if (!query) {
     logger.error('Usage: bun search:rag <your question>');
     process.exit(1);
   }
+
+  // Resolve model configuration (Zod validates CLI args)
+  const modelConfig = resolveConfig(parseCliToModelConfig(values));
+  logModelConfig(modelConfig);
 
   // Set up services for CLI usage
   const DATA_DIR = join(import.meta.dir, '../../../data');
@@ -34,9 +53,9 @@ async function main() {
   );
 
   const archivist = new FamilyArchivist(
-    getGenModel('summarizer'),
-    getEmbedModel('embed-small'),
-    getRerankModel('rerank'),
+    getGenModel(modelConfig.generation),
+    getEmbedModel(modelConfig.embedding),
+    getRerankModel(modelConfig.reranking),
     db,
     participantService,
     locationService,

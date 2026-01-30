@@ -3,7 +3,15 @@ import { serveStatic } from 'hono/bun';
 import { cors } from 'hono/cors';
 import { FamilyArchivist } from './archivist.ts';
 import { createStreamResponse } from './stream-utils.ts';
-import { getGenModel, getEmbedModel, getRerankModel } from '@hop-hv-rag/ai';
+import {
+  getGenModel,
+  getEmbedModel,
+  getRerankModel,
+  resolveConfig,
+  logModelConfig,
+  parseArgsModelOptions,
+  parseCliToModelConfig,
+} from '@hop-hv-rag/ai';
 import { createDb } from '@hop-hv-rag/db';
 import {
   ParticipantService,
@@ -27,6 +35,7 @@ const { values } = parseArgs({
       short: 'u',
       default: join(PROJECT_ROOT, 'packages/ui/dist'),
     },
+    ...parseArgsModelOptions,
   },
   strict: false,
 });
@@ -55,12 +64,16 @@ const participantService = new ParticipantService(participantPath);
 const locationService = new LocationService(locationPath);
 const activityService = new ActivityService(activityPath);
 
+// Resolve model configuration (Zod validates CLI args)
+const modelConfig = resolveConfig(parseCliToModelConfig(values));
+logModelConfig(modelConfig);
+
 // Serve thumbnail images using Hono's serveStatic for Bun
 
 const archivist = new FamilyArchivist(
-  getGenModel('summarizer'),
-  getEmbedModel('embed-small'),
-  getRerankModel('rerank'),
+  getGenModel(modelConfig.generation),
+  getEmbedModel(modelConfig.embedding),
+  getRerankModel(modelConfig.reranking),
   db,
   participantService,
   locationService,

@@ -18,6 +18,8 @@ import {
 import type { EmbeddingModel, LanguageModel, RerankingModel } from 'ai';
 
 export * from './models.ts';
+export * from './config.ts';
+export * from './cli-flags.ts';
 
 const VLLM_BASE_URL = 'http://localhost:4000/v1';
 export type VllmProvider = ReturnType<typeof createOpenAICompatible>;

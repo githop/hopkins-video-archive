@@ -1,5 +1,10 @@
 export const GENERATION_MODELS = {
-  VLLM: ['summarizer', 'summarizer-bulk', 'summarizer-bulk-14b'] as const,
+  VLLM: [
+    'summarizer',
+    'summarizer-bulk',
+    'summarizer-bulk-14b',
+    'summarizer-8b',
+  ] as const,
   GOOGLE: ['gemini-3-flash-preview'] as const,
 } as const;
 
@@ -9,7 +14,7 @@ export const EMBEDDING_MODELS = {
 } as const;
 
 export const RERANKING_MODELS = {
-  VLLM: ['rerank'] as const,
+  VLLM: ['rerank', 'rerank-small'] as const,
   GOOGLE: [] as const,
 } as const;
 

@@ -1,11 +1,34 @@
-import { FamilyArchivist } from './src/rag-query.ts';
-import { getGenModel, getEmbedModel, getRerankModel } from '@hop-hv-rag/ai';
+import { join } from 'node:path';
+import { parseArgs } from 'node:util';
+import { createDb } from '@hop-hv-rag/db';
+import {
+  ParticipantService,
+  LocationService,
+  ActivityService,
+} from '@hop-hv-rag/core';
+import { FamilyArchivist } from './src/archivist';
+import {
+  getGenModel,
+  getEmbedModel,
+  getRerankModel,
+  resolveConfig,
+  logModelConfig,
+  parseArgsModelOptions,
+  parseCliToModelConfig,
+} from '@hop-hv-rag/ai';
 
 const EVAL_PROMPTS_PATH = `${import.meta.dir}/eval-prompts.json`;
 const OUTPUT_PATH = `${import.meta.dir}/../../eval-results.md`;
 const DELAY_MS = 2000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Parse CLI arguments for model selection
+const { values } = parseArgs({
+  args: Bun.argv.slice(2),
+  options: parseArgsModelOptions,
+  strict: false,
+});
 
 /**
  * Consume the query async generator and extract the final answer.
@@ -33,11 +56,32 @@ async function runEval() {
   const prompts = await promptsFile.json();
   let markdown = `# RAG Evaluation Results\n\nGenerated on: ${new Date().toLocaleString()}\n\n`;
 
+  // Resolve model configuration (Zod validates CLI args)
+  const modelConfig = resolveConfig(parseCliToModelConfig(values));
+  logModelConfig(modelConfig);
+
+  // Set up services
+  const DATA_DIR = join(import.meta.dir, '../../data');
+  const db = createDb(join(DATA_DIR, 'hv-rag.db'));
+  const participantService = new ParticipantService(
+    join(DATA_DIR, 'participant-registry.json'),
+  );
+  const locationService = new LocationService(
+    join(DATA_DIR, 'location-registry.json'),
+  );
+  const activityService = new ActivityService(
+    join(DATA_DIR, 'activity-registry.json'),
+  );
+
   // Initialize the archivist once
   const archivist = new FamilyArchivist(
-    getGenModel('summarizer'),
-    getEmbedModel('embed-small'),
-    getRerankModel('rerank'),
+    getGenModel(modelConfig.generation),
+    getEmbedModel(modelConfig.embedding),
+    getRerankModel(modelConfig.reranking),
+    db,
+    participantService,
+    locationService,
+    activityService,
   );
   await archivist.init();
 

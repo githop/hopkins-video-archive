@@ -59,3 +59,55 @@ Curiosity is encouraged, but data integrity is paramount. Before performing any 
 1.  **Iterate Surgically**: When modifying ingestion logic, test on a single video first.
 2.  **Don't Guess, Test**: Use the DB and file system to verify assumptions before proposing code changes.
 3.  **Verify with Eval**: Use the project's evaluation scripts (`search:eval`) to ensure improvements don't introduce regressions.
+
+## 5. CLI Model Configuration
+
+The RAG application supports flexible model selection via CLI arguments (no environment variables).
+
+### Model Selection Options
+
+All search and server commands accept these options:
+
+- `--gen-model <model>`: Generation/summarization model
+- `--embed-model <model>`: Embedding model
+- `--rerank-model <model>`: Reranking model
+
+### Available Models
+
+**Generation Models:**
+
+- `summarizer` (default): Qwen3-4B-AWQ
+- `summarizer-8b`: Qwen3-8B-AWQ (better reasoning, slower)
+- `summarizer-bulk`: Qwen3-4B-AWQ (batch optimized)
+- `summarizer-bulk-14b`: Qwen3-14B-AWQ (highest quality)
+
+**Embedding Models:**
+
+- `embed-small` (default): Qwen3-Embedding-0.6B
+- `embed`: Qwen3-Embedding-4B
+
+**Reranking Models:**
+
+- `rerank` (default): Qwen3-Reranker-4B
+- `rerank-small`: Qwen3-Reranker-0.6B (faster, slightly lower quality)
+
+### Usage Examples
+
+```bash
+# Use 8B model for better reasoning
+bun run search:rag --gen-model=summarizer-8b "What is the oldest video?"
+
+# Use smaller reranker for faster processing
+bun run search:rag --rerank-model=rerank-small "Find clips with Greg"
+
+# Combine options
+bun run search:rag --gen-model=summarizer-8b --rerank-model=rerank-small "complex query"
+
+# Server with custom models
+bun run ui:server --gen-model=summarizer-8b --rerank-model=rerank-small --port=3200
+
+# Evaluation with specific models
+bun run search:eval --gen-model=summarizer-8b --rerank-model=rerank-small
+```
+
+**Note:** The application logs the selected models on startup for verification.
