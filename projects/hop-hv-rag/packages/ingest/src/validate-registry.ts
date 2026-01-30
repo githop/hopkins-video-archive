@@ -4,6 +4,7 @@
  */
 
 import { join } from 'node:path';
+import { logger } from '@hop-hv-rag/core';
 
 const DATA_DIR = join(import.meta.dir, '../../../data');
 
@@ -432,4 +433,7 @@ async function main() {
   await validateActivityRegistry();
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  logger.error({ error }, 'Validation failed');
+  process.exit(1);
+});

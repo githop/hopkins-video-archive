@@ -2,6 +2,7 @@ import { createDb, videos, scenes } from '@hop-hv-rag/db';
 import { count, eq, desc } from 'drizzle-orm';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { logger } from '@hop-hv-rag/core';
 
 const DATA_DIR = join(import.meta.dir, '../../../data');
 const DB_PATH = join(DATA_DIR, 'hv-rag.db');
@@ -29,7 +30,7 @@ async function main() {
       await db.select().from(videos).where(eq(videos.filename, values.file))
     )[0];
     if (!video) {
-      console.error(`❌ Video not found: ${values.file}`);
+      logger.error(`❌ Video not found: ${values.file}`);
       return;
     }
     console.log(`--- Scenes for: ${video.filename} ---`);
@@ -66,4 +67,4 @@ async function main() {
   }
 }
 
-main().catch(console.error);
+main().catch((err) => logger.error(err));

@@ -9,6 +9,7 @@ import {
   ParticipantService,
   LocationService,
   ActivityService,
+  logger,
 } from '@hop-hv-rag/core';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -108,7 +109,7 @@ app.post('/api/query', async (c) => {
     return c.json({ error: 'Query is required' }, 400);
   }
 
-  console.log(`Received query: "${query}"`);
+  logger.info({ query }, 'Received query');
 
   const generator = archivist.query(query);
   return createStreamResponse(generator);

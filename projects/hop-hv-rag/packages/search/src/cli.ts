@@ -4,6 +4,7 @@ import {
   ParticipantService,
   LocationService,
   ActivityService,
+  logger,
 } from '@hop-hv-rag/core';
 import { getGenModel, getEmbedModel, getRerankModel } from '@hop-hv-rag/ai';
 import { FamilyArchivist } from './archivist.ts';
@@ -15,16 +16,22 @@ import { Spinner } from './spinner.ts';
 async function main() {
   const query = Bun.argv.slice(2).join(' ');
   if (!query) {
-    console.error('Usage: bun search:rag <your question>');
+    logger.error('Usage: bun search:rag <your question>');
     process.exit(1);
   }
 
   // Set up services for CLI usage
   const DATA_DIR = join(import.meta.dir, '../../../data');
   const db = createDb(join(DATA_DIR, 'hv-rag.db'));
-  const participantService = new ParticipantService(join(DATA_DIR, 'participant-registry.json'));
-  const locationService = new LocationService(join(DATA_DIR, 'location-registry.json'));
-  const activityService = new ActivityService(join(DATA_DIR, 'activity-registry.json'));
+  const participantService = new ParticipantService(
+    join(DATA_DIR, 'participant-registry.json'),
+  );
+  const locationService = new LocationService(
+    join(DATA_DIR, 'location-registry.json'),
+  );
+  const activityService = new ActivityService(
+    join(DATA_DIR, 'activity-registry.json'),
+  );
 
   const archivist = new FamilyArchivist(
     getGenModel('summarizer'),
@@ -37,7 +44,7 @@ async function main() {
   );
   await archivist.init();
 
-  console.log('Searching the archive...\n');
+  logger.info('Searching the archive...');
 
   let reasoningStarted = false;
   const spinner = new Spinner('Thinking');
@@ -93,5 +100,8 @@ async function main() {
 }
 
 if (import.meta.main) {
-  main().catch(console.error);
+  main().catch((err) => {
+    logger.error(err, 'Unexpected error in CLI');
+    process.exit(1);
+  });
 }

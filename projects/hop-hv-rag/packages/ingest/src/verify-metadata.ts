@@ -1,6 +1,7 @@
 import { createDb, videos, transcripts } from '@hop-hv-rag/db';
 import { count, eq } from 'drizzle-orm';
 import { join } from 'node:path';
+import { logger } from '@hop-hv-rag/core';
 
 const DATA_DIR = join(import.meta.dir, '../../../data');
 const DB_PATH = join(DATA_DIR, 'hv-rag.db');
@@ -42,4 +43,4 @@ async function main() {
   }
 }
 
-main().catch(console.error);
+main().catch((err) => logger.error(err));

@@ -5,6 +5,7 @@
 
 import { join } from 'node:path';
 import { mkdir, copyFile } from 'node:fs/promises';
+import { logger } from '@hop-hv-rag/core';
 
 const DATA_DIR = join(import.meta.dir, '../../../data');
 const BACKUPS_DIR = join(DATA_DIR, 'backups');
@@ -35,7 +36,7 @@ async function main() {
   const timestamp = getTimestamp();
   const backupDir = join(BACKUPS_DIR, timestamp);
 
-  console.log(`Creating backup at: ${backupDir}`);
+  logger.info(`Creating backup at: ${backupDir}`);
 
   // Create backup directory
   await mkdir(backupDir, { recursive: true });
@@ -50,19 +51,19 @@ async function main() {
     const file = Bun.file(srcPath);
     if (await file.exists()) {
       await copyFile(srcPath, destPath);
-      console.log(`  Backed up: ${filename}`);
+      logger.info(`  Backed up: ${filename}`);
       backedUp++;
     } else {
       skipped.push(filename);
     }
   }
 
-  console.log(`\nBackup complete!`);
-  console.log(`  Files backed up: ${backedUp}`);
+  logger.info(`\nBackup complete!`);
+  logger.info(`  Files backed up: ${backedUp}`);
   if (skipped.length > 0) {
-    console.log(`  Skipped (not found): ${skipped.join(', ')}`);
+    logger.info(`  Skipped (not found): ${skipped.join(', ')}`);
   }
-  console.log(`  Location: ${backupDir}`);
+  logger.info(`  Location: ${backupDir}`);
 }
 
-main().catch(console.error);
+main().catch((err) => logger.error(err));

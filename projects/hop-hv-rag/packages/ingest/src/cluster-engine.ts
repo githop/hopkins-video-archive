@@ -3,6 +3,7 @@ import { generateText } from 'ai';
 import { z } from 'zod';
 import { createDb } from '@hop-hv-rag/db';
 import { sql } from 'drizzle-orm';
+import { logger } from '@hop-hv-rag/core';
 
 interface ClassificationEntry {
   canonical: string;
@@ -53,7 +54,7 @@ export async function runClustering<
 
   // 1. Ensure unique items file exists
   if (!(await Bun.file(inputPath).exists())) {
-    console.log(`Generating unique items from database for: ${inputPath}`);
+    logger.info({ inputPath }, 'Generating unique items from database');
     const results = db.all<Record<string, string>>(sql.raw(dbQuery));
     const all = new Set<string>();
 
@@ -73,24 +74,25 @@ export async function runClustering<
   // 2. Load data and existing registry
   const itemsFile = Bun.file(inputPath);
   const items = (await itemsFile.json()) as string[];
-  console.log(`Loaded ${items.length} unique items.`);
+  logger.info({ count: items.length }, 'Loaded unique items');
 
   let registry: Record<string, ClassificationEntry> = {};
   const registryFile = Bun.file(outputPath);
   if (await registryFile.exists()) {
     try {
       registry = await registryFile.json();
-      console.log(
-        `Resuming from ${Object.keys(registry).length} existing entries.`,
+      logger.info(
+        { existingCount: Object.keys(registry).length },
+        'Resuming from existing entries',
       );
     } catch (e) {
-      console.warn('Could not parse existing registry, starting fresh.');
+      logger.warn('Could not parse existing registry, starting fresh');
     }
   }
 
   // 3. Process batches with concurrency
   const model = getGenModel(modelName);
-  console.log(`Using model: ${modelName}`);
+  logger.info({ model: modelName }, 'Using model');
   const activePromises = new Set<Promise<void>>();
 
   for (let i = 0; i < items.length; i += batchSize) {
@@ -100,8 +102,9 @@ export async function runClustering<
     if (remainingInBatch.length === 0) continue;
 
     const promise = (async (currentBatch: string[], batchIdx: number) => {
-      console.log(
-        `Processing batch ${batchIdx + 1} (${currentBatch.length} new items)...`,
+      logger.info(
+        { batchIdx: batchIdx + 1, batchSize: currentBatch.length },
+        'Processing batch',
       );
       try {
         const { text } = await generateText({
@@ -157,7 +160,10 @@ export async function runClustering<
 
         await Bun.write(outputPath, JSON.stringify(registry, null, 2));
       } catch (error) {
-        console.error(`Error in batch ${batchIdx + 1}:`, error);
+        logger.error(
+          { batchIdx: batchIdx + 1, error },
+          'Error processing batch',
+        );
       }
     })(remainingInBatch, i / batchSize);
 
@@ -174,10 +180,14 @@ export async function runClustering<
   // 4. Final summary
   const finalMissing = items.filter((p) => !registry[p]);
   if (finalMissing.length > 0) {
-    console.error(
-      `❌ Process complete but ${finalMissing.length} items are missing.`,
+    logger.error(
+      { missingCount: finalMissing.length },
+      'Process complete but some items are missing',
     );
   } else {
-    console.log(`✅ Success! All ${items.length} items processed.`);
+    logger.info(
+      { totalProcessed: items.length },
+      'All items processed successfully',
+    );
   }
 }

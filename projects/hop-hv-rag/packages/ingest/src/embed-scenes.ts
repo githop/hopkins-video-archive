@@ -4,6 +4,7 @@ import { embedMany, type EmbeddingModel } from 'ai';
 import { join } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import { parseArgs } from 'node:util';
+import { logger } from '@hop-hv-rag/core';
 
 /**
  * Configuration
@@ -24,8 +25,9 @@ class SceneEmbedder {
    * Processes a list of scenes in batches to generate and save embeddings.
    */
   async embedScenes(scenesList: Scene[], batchSize: number) {
-    console.log(
-      `📡 Starting embedding for ${scenesList.length} scenes (Batch Size: ${batchSize})...`,
+    logger.info(
+      { sceneCount: scenesList.length, batchSize },
+      'Starting embedding for scenes',
     );
 
     for (let i = 0; i < scenesList.length; i += batchSize) {
@@ -35,7 +37,10 @@ class SceneEmbedder {
   }
 
   private async processBatch(batch: Scene[], batchNumber: number) {
-    console.log(`   📦 Batch ${batchNumber} (${batch.length} scenes)...`);
+    logger.info(
+      { batchNumber, sceneCount: batch.length },
+      'Processing embedding batch',
+    );
 
     const textValues = batch.map((s) => `${s.title}: ${s.summary}`);
 
@@ -59,9 +64,12 @@ class SceneEmbedder {
         );
       }
 
-      console.log(`   ✅ Batch ${batchNumber} saved.`);
+      logger.info({ batchNumber }, 'Embedding batch saved');
     } catch (error: any) {
-      console.error(`   ❌ Batch ${batchNumber} failed: ${error.message}`);
+      logger.error(
+        { batchNumber, error: error.message },
+        'Embedding batch failed',
+      );
     }
   }
 }
@@ -83,7 +91,10 @@ async function main() {
   });
 
   const db = createDb(DB_PATH);
-  const embedder = new SceneEmbedder(db, getEmbedModel(values.model as EmbeddingModelName));
+  const embedder = new SceneEmbedder(
+    db,
+    getEmbedModel(values.model as EmbeddingModelName),
+  );
   const batchSize = parseInt(values.batchSize!);
 
   let targetScenes: Scene[] = [];
@@ -93,7 +104,7 @@ async function main() {
       await db.select().from(videos).where(eq(videos.filename, values.file))
     )[0];
     if (!video) {
-      console.error(`❌ Video not found: ${values.file}`);
+      logger.error({ file: values.file }, 'Video not found');
       process.exit(1);
     }
     targetScenes = await db
@@ -114,19 +125,22 @@ async function main() {
       targetScenes = allScenes.filter((s) => !existingIds.has(s.id));
     }
   } else {
-    console.error(
+    logger.error(
       'Usage: bun ingest:embed --file <filename> | --all [--force] [--batchSize <n>]',
     );
     process.exit(1);
   }
 
   if (targetScenes.length === 0) {
-    console.log('✨ All scenes are already vectorized.');
+    logger.info('All scenes are already vectorized');
     return;
   }
 
   await embedder.embedScenes(targetScenes, batchSize);
-  console.log('\n🏁 Embedding complete.');
+  logger.info('Embedding complete');
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  logger.error(err, 'Embedding failed');
+  process.exit(1);
+});

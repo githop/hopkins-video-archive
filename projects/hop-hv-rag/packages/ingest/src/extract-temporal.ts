@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { eq, like, isNull } from 'drizzle-orm';
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
+import { logger } from '@hop-hv-rag/core';
 
 const DATA_DIR = resolve(process.cwd(), '../../data');
 const DB_PATH = `${DATA_DIR}/hv-rag.db`;
@@ -81,7 +82,7 @@ async function extractTemporalMetadata(
     .all();
 
   if (videoScenes.length === 0) {
-    console.log(`   ⚠️ No scenes for ${video.filename}, skipping`);
+    logger.info({ filename: video.filename }, 'No scenes found, skipping');
     return;
   }
 
@@ -104,8 +105,14 @@ async function extractTemporalMetadata(
 
     // 4. Skip low confidence results
     if (object.confidence === 'low') {
-      console.log(`   ⏭️ ${video.filename}: Low confidence, skipping`);
-      console.log(`      Evidence: ${object.evidence}`);
+      logger.info(
+        {
+          filename: video.filename,
+          confidence: object.confidence,
+          evidence: object.evidence,
+        },
+        'Low confidence result, skipping',
+      );
       return;
     }
 
@@ -118,12 +125,20 @@ async function extractTemporalMetadata(
       .where(eq(videos.id, video.id))
       .run();
 
-    console.log(
-      `   ✅ ${video.filename}: ${object.yearStart}-${object.yearEnd} (${object.confidence})`,
+    logger.info(
+      {
+        filename: video.filename,
+        yearStart: object.yearStart,
+        yearEnd: object.yearEnd,
+        confidence: object.confidence,
+      },
+      'Extracted temporal metadata',
     );
-    // console.log(`      Evidence: ${object.evidence}`);
   } catch (e) {
-    console.error(`   ❌ Error processing ${video.filename}:`, e);
+    logger.error(
+      { filename: video.filename, error: e },
+      'Error processing video',
+    );
     throw e;
   }
 }
@@ -143,7 +158,7 @@ async function main() {
 
   // Validate args
   if (!values.all && !values.file) {
-    console.error('Usage: bun ingest:temporal --all | --file <filename>');
+    logger.error('Usage: bun ingest:temporal --all | --file <filename>');
     process.exit(1);
   }
 
@@ -166,7 +181,7 @@ async function main() {
       : db.select().from(videos).where(isNull(videos.yearStart)).all();
   }
 
-  console.log(`Processing ${videosToProcess.length} videos...\n`);
+  logger.info({ count: videosToProcess.length }, 'Processing videos');
 
   // Process with concurrency limit
   const semaphore = new Semaphore(parseInt(values.concurrency || '16'));
@@ -187,4 +202,7 @@ async function main() {
   console.log('\nDone!');
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  logger.error(err);
+  process.exit(1);
+});

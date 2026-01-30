@@ -6,6 +6,7 @@
 
 import { join } from 'node:path';
 import { unlink } from 'node:fs/promises';
+import { logger } from '@hop-hv-rag/core';
 
 const DATA_DIR = join(import.meta.dir, '../../../data');
 
@@ -20,8 +21,8 @@ const FILES_TO_DELETE = [
 ];
 
 async function main() {
-  console.log('Resetting database and registry files...');
-  console.log('(mapping.json is preserved)\n');
+  logger.info('Resetting database and registry files...');
+  logger.info('(mapping.json is preserved)\n');
 
   let deleted = 0;
   const skipped: string[] = [];
@@ -32,17 +33,17 @@ async function main() {
 
     if (await file.exists()) {
       await unlink(filePath);
-      console.log(`  Deleted: ${filename}`);
+      logger.info(`  Deleted: ${filename}`);
       deleted++;
     } else {
       skipped.push(filename);
     }
   }
 
-  console.log(`\nReset complete!`);
-  console.log(`  Files deleted: ${deleted}`);
+  logger.info(`\nReset complete!`);
+  logger.info(`  Files deleted: ${deleted}`);
   if (skipped.length > 0) {
-    console.log(`  Skipped (not found): ${skipped.join(', ')}`);
+    logger.info(`  Skipped (not found): ${skipped.join(', ')}`);
   }
 
   console.log('\nNext steps:');
@@ -51,4 +52,4 @@ async function main() {
   console.log('  3. Run: bun run ingest:seed');
 }
 
-main().catch(console.error);
+main().catch((err) => logger.error(err));

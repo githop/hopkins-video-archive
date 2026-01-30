@@ -7,7 +7,7 @@ import {
   videos,
   scenes,
 } from '@hop-hv-rag/db';
-import { ParticipantService } from '@hop-hv-rag/core';
+import { ParticipantService, logger } from '@hop-hv-rag/core';
 import { join } from 'node:path';
 
 const DATA_DIR = join(import.meta.dir, '../../../data');
@@ -19,7 +19,7 @@ async function main() {
   const participantService = new ParticipantService(REGISTRY_PATH);
   await participantService.load();
 
-  console.log('Populating People and Variants...');
+  logger.info({ phase: 'populate' }, 'Populating People and Variants...');
 
   // 1. Unique Canonical Names
   const canonicalNames = participantService.getAllCanonicalNames();
@@ -67,10 +67,13 @@ async function main() {
     }
   }
 
-  console.log(`Populated ${canonicals.size} canonical people/roles.`);
+  logger.info(
+    { phase: 'populate', count: canonicals.size },
+    `Populated ${canonicals.size} canonical people/roles.`,
+  );
 
   // 2. Link Videos
-  console.log('Linking Videos...');
+  logger.info({ phase: 'link_videos' }, 'Linking Videos...');
   const allVideos = await db.select().from(videos);
   for (const video of allVideos) {
     if (!video.participants) continue;
@@ -92,7 +95,7 @@ async function main() {
   }
 
   // 3. Link Scenes
-  console.log('Linking Scenes...');
+  logger.info({ phase: 'link_scenes' }, 'Linking Scenes...');
   const allScenes = await db.select().from(scenes);
   for (const scene of allScenes) {
     if (!scene.participants) continue;
@@ -113,7 +116,10 @@ async function main() {
     }
   }
 
-  console.log('Migration complete!');
+  logger.info({ phase: 'complete' }, 'Migration complete!');
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  logger.error({ error: err }, 'Migration failed');
+  process.exit(1);
+});

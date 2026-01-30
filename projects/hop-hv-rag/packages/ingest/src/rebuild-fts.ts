@@ -1,6 +1,7 @@
 import { createDb } from '@hop-hv-rag/db';
 import { sql } from 'drizzle-orm';
 import { join } from 'node:path';
+import { logger } from '@hop-hv-rag/core';
 
 const DB_PATH = join(import.meta.dir, '../../../data/hv-rag.db');
 
@@ -15,21 +16,21 @@ const DB_PATH = join(import.meta.dir, '../../../data/hv-rag.db');
  * 4. Repopulate FTS index from scenes table
  */
 async function main() {
-  console.log(`Rebuilding FTS index at ${DB_PATH}...`);
+  logger.info({ dbPath: DB_PATH }, 'Rebuilding FTS index');
   const db = createDb(DB_PATH);
 
   // 1. Drop existing triggers
-  console.log('Dropping existing triggers...');
+  logger.info('Dropping existing triggers');
   db.run(sql`DROP TRIGGER IF EXISTS scenes_ai`);
   db.run(sql`DROP TRIGGER IF EXISTS scenes_ad`);
   db.run(sql`DROP TRIGGER IF EXISTS scenes_au`);
 
   // 2. Drop existing FTS table
-  console.log('Dropping existing FTS table...');
+  logger.info('Dropping existing FTS table');
   db.run(sql`DROP TABLE IF EXISTS fts_scenes`);
 
   // 3. Create new FTS table with Porter tokenizer
-  console.log('Creating FTS5 table with Porter tokenizer...');
+  logger.info('Creating FTS5 table with Porter tokenizer');
   db.run(sql`
     CREATE VIRTUAL TABLE fts_scenes USING fts5(
       id UNINDEXED,
@@ -48,7 +49,7 @@ async function main() {
   `);
 
   // 4. Recreate triggers
-  console.log('Creating sync triggers...');
+  logger.info('Creating sync triggers');
   db.run(sql`
     CREATE TRIGGER scenes_ai AFTER INSERT ON scenes BEGIN
       INSERT INTO fts_scenes(rowid, id, video_id, video_filename, title, summary, transcript, participants, locations, activities)
@@ -73,7 +74,7 @@ async function main() {
   `);
 
   // 5. Repopulate FTS index from scenes table
-  console.log('Repopulating FTS index from scenes table...');
+  logger.info('Repopulating FTS index from scenes table');
   db.run(sql`
     INSERT INTO fts_scenes(rowid, id, video_id, video_filename, title, summary, transcript, participants, locations, activities)
     SELECT id, id, video_id, video_filename, title, summary, transcript, participants, locations, activities
@@ -88,12 +89,11 @@ async function main() {
     sql`SELECT COUNT(*) as count FROM scenes`,
   );
 
-  console.log(`\nFTS rebuild complete!`);
-  console.log(`  Scenes in database: ${scenesCount[0]?.count ?? 0}`);
-  console.log(`  Rows in FTS index:  ${countResult[0]?.count ?? 0}`);
+  logger.info({ scenesInDb: scenesCount[0]?.count ?? 0 }, 'FTS rebuild stats');
+  logger.info({ rowsInFts: countResult[0]?.count ?? 0 }, 'FTS rebuild stats');
 
   // 7. Test stemming
-  console.log('\nTesting Porter stemming...');
+  logger.info('Testing Porter stemming');
   const swimTest = db.all<{ title: string }>(
     sql`SELECT s.title FROM fts_scenes f JOIN scenes s ON s.id = f.id WHERE fts_scenes MATCH 'swim' LIMIT 3`,
   );
@@ -101,19 +101,17 @@ async function main() {
     sql`SELECT s.title FROM fts_scenes f JOIN scenes s ON s.id = f.id WHERE fts_scenes MATCH 'swimming' LIMIT 3`,
   );
 
-  console.log(`  Query "swim" results: ${swimTest.length}`);
-  console.log(`  Query "swimming" results: ${swimmingTest.length}`);
-
   if (swimTest.length > 0 && swimmingTest.length > 0) {
     // Check if they return overlapping results (stemming working)
     const swimTitles = new Set(swimTest.map((r) => r.title));
     const overlap = swimmingTest.filter((r) => swimTitles.has(r.title));
     if (overlap.length > 0) {
-      console.log(
-        `  Porter stemming verified - "swim" and "swimming" share ${overlap.length} results`,
-      );
+      logger.info({ overlapCount: overlap.length }, 'Porter stemming verified');
     }
   }
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  logger.error(err, 'FTS rebuild failed');
+  process.exit(1);
+});

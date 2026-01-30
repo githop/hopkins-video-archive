@@ -1,18 +1,19 @@
 import { createDb } from '@hop-hv-rag/db';
 import { sql } from 'drizzle-orm';
 import { join } from 'node:path';
+import { logger } from '@hop-hv-rag/core';
 
 const DB_PATH = join(import.meta.dir, '../../../data/hv-rag.db');
 
 async function main() {
-  console.log(`Initializing database at ${DB_PATH}...`);
+  logger.info(`Initializing database at ${DB_PATH}...`);
   const db = createDb(DB_PATH);
 
   // 1. Create standard tables
   // In a real app we'd use drizzle-kit, but for this bootstrap we'll do raw SQL
   // to ensure sqlite-vec is also handled.
 
-  console.log('Creating tables...');
+  logger.info('Creating tables...');
 
   db.run(sql`
     CREATE TABLE IF NOT EXISTS videos (
@@ -153,9 +154,9 @@ async function main() {
     )
   `);
 
-  console.log('Standard tables created.');
+  logger.info('Standard tables created.');
 
-  console.log('Creating FTS5 table...');
+  logger.info('Creating FTS5 table...');
   // Virtual table for Full-Text Search
   // We index the title, summary, transcript, participants, locations, and activities
   // Using Porter tokenizer for English stemming (swim/swimming/swims all match)
@@ -201,7 +202,7 @@ async function main() {
     END;
   `);
 
-  console.log('FTS tables and triggers created.');
+  logger.info('FTS tables and triggers created.');
 }
 
-main().catch(console.error);
+main().catch((err) => logger.error(err));

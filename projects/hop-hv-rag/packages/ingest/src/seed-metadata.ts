@@ -1,5 +1,5 @@
 import { createDb, videos, transcripts } from '@hop-hv-rag/db';
-import { parseFilename } from '@hop-hv-rag/core';
+import { parseFilename, logger } from '@hop-hv-rag/core';
 import { join, basename } from 'node:path';
 import { Glob } from 'bun';
 
@@ -12,7 +12,7 @@ async function main() {
   const db = createDb(DB_PATH);
 
   // 1. Load Mapping
-  console.log('Loading mapping.json...');
+  logger.info('Loading mapping.json');
   const mapping = await Bun.file(MAPPING_PATH).json();
 
   // Create a lookup for easy matching: "1995-2" -> "0B-..."
@@ -25,25 +25,28 @@ async function main() {
   }
 
   // 2. Scan Transcripts
-  console.log(`Scanning ${TRANSCRIPTS_DIR} for JSON files...`);
+  logger.info({ transcriptsDir: TRANSCRIPTS_DIR }, 'Scanning for JSON files');
   const glob = new Glob('*.json');
   const files = Array.from(glob.scanSync(TRANSCRIPTS_DIR));
-  console.log(`Found ${files.length} transcript files.`);
+  logger.info({ fileCount: files.length }, 'Found transcript files');
+
+  let processed = 0;
+  let skipped = 0;
+  let errors = 0;
 
   for (const file of files) {
     const base = basename(file, '.json');
     const driveFileId = driveMap.get(base);
 
     if (!driveFileId) {
-      console.warn(`⚠️ No drive mapping found for ${file}. Skipping.`);
+      logger.warn({ file }, 'No drive mapping found, skipping');
+      skipped++;
       continue;
     }
 
     const fullPath = join(TRANSCRIPTS_DIR, file);
     const content = await Bun.file(fullPath).json();
     const metadata = parseFilename(file);
-
-    console.log(`Processing ${file}...`);
 
     try {
       await db.transaction(async (tx) => {
@@ -80,16 +83,22 @@ async function main() {
           }
         }
       });
+      processed++;
     } catch (err: any) {
       if (err.message?.includes('UNIQUE constraint failed')) {
-        console.warn(`⏭️ ${file} already ingested. Skipping.`);
+        logger.warn({ file }, 'Already ingested, skipping');
+        skipped++;
       } else {
-        console.error(`❌ Error processing ${file}:`, err);
+        logger.error({ file, err }, 'Error processing file');
+        errors++;
       }
     }
   }
 
-  console.log('\nMetadata ingestion complete.');
+  logger.info({ processed, skipped, errors }, 'Metadata ingestion complete');
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  logger.error(err, 'Metadata ingestion failed');
+  process.exit(1);
+});

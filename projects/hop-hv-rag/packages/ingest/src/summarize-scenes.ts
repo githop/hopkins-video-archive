@@ -14,6 +14,7 @@ import {
   ParticipantService,
   LocationService,
   ActivityService,
+  logger,
 } from '@hop-hv-rag/core';
 import { generateText, type LanguageModel } from 'ai';
 import { z } from 'zod';
@@ -83,7 +84,10 @@ class VideoArchivist {
     video: Video,
     options: { force?: boolean; concurrency: number },
   ) {
-    console.log(`\n🎥 [${video.filename}] (ID: ${video.id})`);
+    logger.info(
+      { videoId: video.id, filename: video.filename },
+      '🎥 Processing video',
+    );
 
     if (options.force) {
       // Find all scene IDs for this video to clean up junction tables
@@ -118,7 +122,7 @@ class VideoArchivist {
       .orderBy(transcripts.startTime);
 
     if (segments.length === 0) {
-      console.warn(`   ⚠️ No transcripts found. Skipping.`);
+      logger.warn({ videoId: video.id }, '⚠️ No transcripts found. Skipping.');
       return;
     }
 
@@ -141,19 +145,30 @@ class VideoArchivist {
     });
 
     if (chunks.length === 0) {
-      console.log(
-        `   ✅ Video fully processed (skipping ${allChunks.length} chunks).`,
+      logger.info(
+        { videoId: video.id, chunks: allChunks.length },
+        '✅ Video fully processed',
       );
       return;
     }
 
     if (chunks.length < allChunks.length) {
-      console.log(
-        `   ℹ️ Processing ${chunks.length} missing chunks (${allChunks.length - chunks.length} skipped)...`,
+      logger.info(
+        {
+          videoId: video.id,
+          chunksToProcess: chunks.length,
+          skipped: allChunks.length - chunks.length,
+        },
+        `ℹ️ Processing ${chunks.length} missing chunks (${allChunks.length - chunks.length} skipped)...`,
       );
     } else {
-      console.log(
-        `   🚀 Processing ${chunks.length} chunks (Concurrency: ${options.concurrency})...`,
+      logger.info(
+        {
+          videoId: video.id,
+          chunks: chunks.length,
+          concurrency: options.concurrency,
+        },
+        `🚀 Processing ${chunks.length} chunks (Concurrency: ${options.concurrency})...`,
       );
     }
 
@@ -202,8 +217,14 @@ class VideoArchivist {
       })
       .where(eq(videos.id, videoId));
 
-    console.log(
-      `   ✨ Updated video metadata: ${allParticipants.size} participants, ${allLocations.size} locations, ${allActivities.size} activities.`,
+    logger.info(
+      {
+        videoId,
+        participants: allParticipants.size,
+        locations: allLocations.size,
+        activities: allActivities.size,
+      },
+      '✨ Updated video metadata',
     );
   }
 
@@ -398,11 +419,15 @@ class VideoArchivist {
         }
       }
 
-      console.log(`   ✅ [${startTime.toFixed(0)}s] ${data.title}`);
+      logger.info(
+        { startTime: startTime.toFixed(0), title: data.title },
+        '✅ Scene created',
+      );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(
-        `   ❌ [${startTime.toFixed(0)}s] Failed after 3 retries: ${message}`,
+      logger.error(
+        { startTime: startTime.toFixed(0), error: message },
+        '❌ Failed after 3 retries',
       );
     }
   }
@@ -515,7 +540,7 @@ async function main() {
   } else if (values.all) {
     targetVideos = await db.select().from(videos);
   } else {
-    console.error(
+    logger.error(
       'Usage: bun ingest:summarize --file <filename> | --all [--force] [--concurrency <n>]',
     );
     process.exit(1);
@@ -543,8 +568,9 @@ async function main() {
     });
   }
 
-  console.log(
-    `🎬 Archivist starting. Processing ${targetVideos.length} videos with ${videoConcurrency} concurrent videos (LPT scheduled)...`,
+  logger.info(
+    { videoCount: targetVideos.length, videoConcurrency },
+    '🎬 Archivist starting. Processing videos with LPT scheduling...',
   );
 
   const activePromises = new Set<Promise<void>>();
@@ -556,10 +582,12 @@ async function main() {
         concurrency,
       })
       .catch((error) => {
-        console.error(
-          `❌ Critical error processing video [${video.id}]: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+        logger.error(
+          {
+            videoId: video.id,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          '❌ Critical error processing video',
         );
       });
     activePromises.add(promise);
@@ -573,7 +601,10 @@ async function main() {
 
   await Promise.all(activePromises);
 
-  console.log('\n🏁 All videos processed.');
+  logger.info('🏁 All videos processed.');
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  logger.error({ error }, 'Fatal error in main');
+  process.exit(1);
+});

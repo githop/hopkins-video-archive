@@ -14,6 +14,7 @@ import {
   ParticipantService,
   LocationService,
   ActivityService,
+  logger,
 } from '@hop-hv-rag/core';
 import {
   streamText,
@@ -57,6 +58,7 @@ export class FamilyArchivist {
   async *query(userQuery: string): AsyncGenerator<StreamChunk> {
     // 1. Retrieve relevant scenes
     const results = await this.retrieve(userQuery);
+
     const sources = results ? await this.buildSources(results) : [];
     const context = this.formatContextForLLM(sources);
 
@@ -267,18 +269,21 @@ export class FamilyArchivist {
       ]);
 
     if (detectedPeople.length > 0) {
-      console.log(
-        `   Detected people: ${detectedPeople.map((p) => p.name).join(', ')}`,
+      logger.debug(
+        { people: detectedPeople.map((p) => p.name) },
+        'Detected people in query',
       );
     }
     if (detectedLocations.length > 0) {
-      console.log(
-        `   Detected locations: ${detectedLocations.map((l) => l.name).join(', ')}`,
+      logger.debug(
+        { locations: detectedLocations.map((l) => l.name) },
+        'Detected locations in query',
       );
     }
     if (detectedActivities.length > 0) {
-      console.log(
-        `   Detected activities: ${detectedActivities.map((a) => a.name).join(', ')}`,
+      logger.debug(
+        { activities: detectedActivities.map((a) => a.name) },
+        'Detected activities in query',
       );
     }
 
@@ -293,7 +298,7 @@ export class FamilyArchivist {
       return null;
     }
 
-    console.log(`   Found ${results.length} relevant scenes.`);
+    logger.info({ sceneCount: results.length }, 'Found relevant scenes');
 
     return results;
   }
@@ -480,7 +485,7 @@ export class FamilyArchivist {
     const fused = this.fuse(vectorResults, ftsResults);
 
     // 4. Neural Re-ranking
-    console.log(`   Re-ranking ${fused.length} candidates...`);
+    logger.info({ candidateCount: fused.length }, 'Re-ranking candidates');
     const { ranking } = await rerank({
       model: this.rerankModel,
       query,
@@ -565,7 +570,7 @@ export class FamilyArchivist {
     // 7. Temporal boosting based on year in query
     const queryYear = this.detectYearInQuery(query);
     if (queryYear) {
-      console.log(`   Detected year: ${queryYear}`);
+      logger.info({ year: queryYear }, 'Detected year in query');
       for (const result of fused) {
         const { videoYearStart, videoYearEnd } = result;
         if (videoYearStart && videoYearEnd) {
