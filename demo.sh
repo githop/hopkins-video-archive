@@ -35,7 +35,7 @@ echo "🚀 Initializing Complete Archive Stack..."
 # 2. Start Inference Stack
 echo "🧠 Waking up the Brain (gnarlyvllm)..."
 cd "$PROJECT_ROOT/projects/gnarlyvllm"
-bun packages/cli/src/main.tsx start rag-full
+bun packages/cli/src/main.tsx start rag-full-8b
 
 # 3. Build UI
 echo "📦 Building Frontend..."
