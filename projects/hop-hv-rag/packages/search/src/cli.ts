@@ -98,11 +98,7 @@ async function main() {
               `[${s.citationId}] ${s.video.title} @ ${s.timestamp.formatted}`,
             );
             logger.print(`  ${s.sceneTitle}`);
-            if (s.video.hasLocalFile) {
-              logger.print(`  ${s.video.videoUrl}\n`);
-            } else {
-              logger.print(`  Video not available locally\n`);
-            }
+            logger.print(`  ${s.video.videoUrl}\n`);
           }
         }
 

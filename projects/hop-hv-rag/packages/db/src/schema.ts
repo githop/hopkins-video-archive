@@ -12,7 +12,6 @@ export const videos = sqliteTable('videos', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   driveFileId: text('drive_file_id').notNull().unique(),
   filename: text('filename').notNull(),
-  localPath: text('local_path'), // Path to local video file for streaming
   title: text('title'),
   recordedAt: text('recorded_at'),
   year: integer('year'),

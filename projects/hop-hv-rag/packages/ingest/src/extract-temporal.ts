@@ -1,11 +1,20 @@
 import { createDb, videos, scenes, type Video } from '@hop-hv-rag/db';
 import { getGenModel } from '@hop-hv-rag/ai';
-import { generateObject, type LanguageModel } from 'ai';
-import { z } from 'zod';
+import {
+  generateText,
+  Output,
+  NoObjectGeneratedError,
+  type LanguageModel,
+} from 'ai';
 import { eq, like, isNull } from 'drizzle-orm';
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { logger } from '@hop-hv-rag/core';
+import {
+  TEMPORAL_EXTRACTION_SYSTEM_PROMPT,
+  getTemporalExtractionPrompt,
+  TemporalExtractionSchema,
+} from './prompts.ts';
 
 const DATA_DIR = resolve(process.cwd(), '../../data');
 const DB_PATH = `${DATA_DIR}/hv-rag.db`;
@@ -40,35 +49,6 @@ class Semaphore {
   }
 }
 
-const TemporalSchema = z.object({
-  yearStart: z.number().int().min(1960).max(2030),
-  yearEnd: z.number().int().min(1960).max(2030),
-  confidence: z.enum(['high', 'medium', 'low']),
-  evidence: z.string(),
-});
-
-function getTemporalPrompt(filename: string, sceneContext: string): string {
-  return `You are analyzing a home video from the Hopkins family archive.
-Based on the filename and scene content, determine the year(s) when this video was recorded.
-
-FILENAME: ${filename}
-
-SCENES:
-${sceneContext}
-
-RULES:
-- yearStart and yearEnd define the recording period
-- If the video spans a single year, set both to the same value
-- Use explicit year mentions in scene content as PRIMARY evidence (highest confidence)
-- Use filename year patterns (e.g., "1984-1985") as SECONDARY evidence
-- confidence levels:
-  - "high": Explicit year stated in scene content (e.g., "Christmas 1984", "Greg's birthday in 1986")
-  - "medium": Year inferred from filename pattern with supporting context
-  - "low": Pure guess based on filename alone with no corroborating content
-
-OUTPUT: JSON object with yearStart, yearEnd, confidence, evidence`;
-}
-
 async function extractTemporalMetadata(
   db: ReturnType<typeof createDb>,
   model: LanguageModel,
@@ -97,10 +77,13 @@ async function extractTemporalMetadata(
   // Actually, I'll stick to the code I wrote in schema 1960-2030 in the Zod schema above.
 
   try {
-    const { object } = await generateObject({
+    const { output: object } = await generateText({
       model,
-      schema: TemporalSchema,
-      prompt: getTemporalPrompt(video.filename, sceneContext),
+      system: TEMPORAL_EXTRACTION_SYSTEM_PROMPT,
+      output: Output.object({
+        schema: TemporalExtractionSchema,
+      }),
+      prompt: getTemporalExtractionPrompt(video.filename, sceneContext),
     });
 
     // 4. Skip low confidence results
@@ -135,6 +118,17 @@ async function extractTemporalMetadata(
       'Extracted temporal metadata',
     );
   } catch (e) {
+    if (NoObjectGeneratedError.isInstance(e)) {
+      logger.warn(
+        {
+          filename: video.filename,
+          text: e.text,
+          response: e.response,
+        },
+        'No object generated - model did not return valid JSON',
+      );
+      return;
+    }
     logger.error(
       { filename: video.filename, error: e },
       'Error processing video',
@@ -150,7 +144,7 @@ async function main() {
       file: { type: 'string' },
       all: { type: 'boolean', default: false },
       force: { type: 'boolean', default: false },
-      model: { type: 'string', default: 'summarizer-bulk' },
+      model: { type: 'string', default: 'summarizer-bulk-14b' },
       concurrency: { type: 'string', default: '16' },
     },
     strict: true,

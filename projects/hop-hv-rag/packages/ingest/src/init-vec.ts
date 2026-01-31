@@ -24,6 +24,16 @@ async function main() {
   `),
   );
 
+  logger.info('Creating vec_videos...');
+  await db.run(
+    sql.raw(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS vec_videos USING vec0(
+      rowid INTEGER PRIMARY KEY,
+      video_embedding FLOAT[1024]
+    );
+  `),
+  );
+
   logger.info('✅ Vector tables initialized successfully.');
 }
 

@@ -60,8 +60,12 @@ bun run ingest:migrate-participants
 bun run ingest:cluster-locations
 bun run ingest:migrate-locations
 
+# Generate global video summaries
+bun run ingest:global --all
+
 # Generate embeddings for semantic search
 bun run ingest:embed --all
+bun run ingest:embed-videos --all
 ```
 
 ## Querying the Archive

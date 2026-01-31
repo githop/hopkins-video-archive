@@ -10,8 +10,6 @@ interface SourceCardProps {
 export const SourceCard: React.FC<SourceCardProps> = ({ source, isUsed }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const canWatch = source.video.hasLocalFile;
-
   return (
     <>
       <div
@@ -31,8 +29,8 @@ export const SourceCard: React.FC<SourceCardProps> = ({ source, isUsed }) => {
 
         {/* Thumbnail - 4:3 aspect ratio */}
         <div
-          onClick={() => canWatch && setIsModalOpen(true)}
-          className={`relative w-full pt-[75%] bg-gray-100 block ${canWatch ? 'cursor-pointer' : 'cursor-default'}`}
+          onClick={() => setIsModalOpen(true)}
+          className="relative w-full pt-[75%] bg-gray-100 block cursor-pointer"
         >
           <img
             src={source.thumbnailUrl}
@@ -91,18 +89,12 @@ export const SourceCard: React.FC<SourceCardProps> = ({ source, isUsed }) => {
           </p>
 
           {/* Watch Button */}
-          {canWatch ? (
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="block w-full text-center py-2 px-4 bg-gray-50 hover:bg-gray-100 text-blue-600 text-sm font-medium rounded-lg border border-gray-200 transition-colors"
-            >
-              Watch Scene
-            </button>
-          ) : (
-            <span className="block w-full text-center py-2 px-4 bg-gray-50 text-gray-400 text-sm font-medium rounded-lg border border-gray-200">
-              Video unavailable
-            </span>
-          )}
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="block w-full text-center py-2 px-4 bg-gray-50 hover:bg-gray-100 text-blue-600 text-sm font-medium rounded-lg border border-gray-200 transition-colors"
+          >
+            Watch Scene
+          </button>
         </div>
       </div>
 

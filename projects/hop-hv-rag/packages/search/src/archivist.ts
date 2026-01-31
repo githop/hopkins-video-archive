@@ -7,6 +7,7 @@ import {
   sceneToPeople,
   sceneToLocations,
   sceneToActivities,
+  videos,
   type schema,
 } from '@hop-hv-rag/db';
 import { validateSceneEntities } from '@hop-hv-rag/db/validation';
@@ -74,9 +75,19 @@ export class FamilyArchivist {
     }
 
     // 2. Stream generation with reasoning
+    const system = this.getSystemPrompt(context);
+
+    logger.debug(
+      {
+        system,
+        prompt: userQuery,
+      },
+      '🔍 RAG Context Payload',
+    );
+
     const result = streamText({
       model: this.genModel,
-      system: this.getSystemPrompt(context),
+      system,
       prompt: userQuery,
     });
 
@@ -146,6 +157,13 @@ export class FamilyArchivist {
         .where(sql`${sceneToActivities.sceneId} = ${r.id}`)
         .all();
 
+      // Fetch global summary for the parent video
+      const videoRow = this.db
+        .select({ globalSummary: videos.globalSummary })
+        .from(videos)
+        .where(sql`${videos.id} = ${r.videoId}`)
+        .get();
+
       // Validate all entities using centralized helper
       const { participants, locations, activities } = validateSceneEntities({
         participants: participantRows,
@@ -158,12 +176,13 @@ export class FamilyArchivist {
       const seconds = Math.floor(r.startTime % 60);
       const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-      // Use relative thumbnail path directly
-      const thumbnailUrl = r.thumbnailPath || '';
+      // Build thumbnail URL with /thumbnails prefix
+      const thumbnailUrl = r.thumbnailPath
+        ? `/thumbnails${r.thumbnailPath}`
+        : '';
 
-      // Build video URL with timestamp for local streaming
+      // Build video URL with timestamp for streaming
       const videoUrl = `/videos/${r.videoFilename}#t=${Math.floor(r.startTime)}`;
-      const hasLocalFile = !!r.localPath;
 
       sources.push({
         sceneId: r.id,
@@ -179,7 +198,6 @@ export class FamilyArchivist {
           yearEnd: r.videoYearEnd,
           filename: r.videoFilename,
           videoUrl,
-          hasLocalFile,
         },
         timestamp: {
           startSeconds: r.startTime,
@@ -189,6 +207,7 @@ export class FamilyArchivist {
         participants,
         locations,
         activities,
+        globalSummary: videoRow?.globalSummary || null,
       });
     }
 
@@ -197,11 +216,38 @@ export class FamilyArchivist {
 
   /**
    * Convert structured Source[] to text for the LLM system prompt.
+   * Includes global video summaries (deduplicated) before individual scene sources.
    */
   private formatContextForLLM(sources: Source[]): string {
     if (sources.length === 0) return 'No relevant scenes found.';
 
-    return sources
+    // Extract unique global summaries by video
+    const globalSummaries = new Map<
+      number,
+      { title: string | null; summary: string }
+    >();
+    for (const s of sources) {
+      if (s.globalSummary && !globalSummaries.has(s.video.id)) {
+        globalSummaries.set(s.video.id, {
+          title: s.video.title,
+          summary: s.globalSummary,
+        });
+      }
+    }
+
+    // Format global summaries section
+    let context = '';
+    if (globalSummaries.size > 0) {
+      context += 'GLOBAL VIDEO CONTEXT:\n\n';
+      for (const [videoId, data] of globalSummaries) {
+        context += `VIDEO: ${data.title || 'Untitled'} (ID: ${videoId})\n`;
+        context += `ABSTRACT: ${data.summary}\n\n`;
+      }
+      context += '---\n\n';
+    }
+
+    // Format individual scene sources
+    const sceneContext = sources
       .map((s) => {
         const participantNames =
           s.participants.map((p) => p.name).join(', ') || 'None identified';
@@ -225,6 +271,8 @@ export class FamilyArchivist {
         ].join('\n');
       })
       .join('\n\n');
+
+    return sceneContext;
   }
 
   /**
@@ -446,8 +494,7 @@ export class FamilyArchivist {
         v.year_end as videoYearEnd,
         v.participants as videoParticipants,
         v.locations as videoLocations,
-        v.filename as videoFilename,
-        v.local_path as localPath
+        v.filename as videoFilename
       FROM (
         SELECT rowid, vec_distance_cosine(scene_embedding, '${queryVecJson}') as distance
         FROM vec_scenes
@@ -479,8 +526,7 @@ export class FamilyArchivist {
         v.year_end as videoYearEnd,
         v.participants as videoParticipants,
         v.locations as videoLocations,
-        v.filename as videoFilename,
-        v.local_path as localPath
+        v.filename as videoFilename
       FROM fts_scenes f
       JOIN scenes s ON s.id = f.id
       JOIN videos v ON v.id = s.video_id

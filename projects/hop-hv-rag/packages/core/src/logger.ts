@@ -9,7 +9,7 @@ const transport = isProduction
       target: 'pino-pretty',
       options: {
         colorize: true,
-        translateTime: 'yyyy-MM-dd HH:mm:ss',
+        translateTime: 'SYS:yyyy-mm-dd HH:MM:ss',
         ignore: 'pid,hostname',
       },
     };

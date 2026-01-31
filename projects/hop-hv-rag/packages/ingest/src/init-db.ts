@@ -23,6 +23,8 @@ async function main() {
       title TEXT,
       recorded_at TEXT,
       year INTEGER,
+      year_start INTEGER,
+      year_end INTEGER,
       global_summary TEXT,
       participants TEXT,
       locations TEXT,

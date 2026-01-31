@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { eq, sql, inArray } from 'drizzle-orm';
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
+import { TUI } from './tui.ts';
 
 /**
  * Configuration & Constants
@@ -64,6 +65,20 @@ interface Chunk {
   rawSegments: Transcript[];
 }
 
+interface ProgressCallbacks {
+  onVideoStart: (video: Video, totalChunks: number) => void;
+  onChunkProgress: (
+    video: Video,
+    chunkNum: number,
+    totalChunks: number,
+    title: string | null,
+  ) => void;
+  onSceneCreated: (video: Video, title: string) => void;
+  onVideoComplete: (video: Video, sceneCount: number) => void;
+  onVideoError: (video: Video, error: string) => void;
+  onVideoWarning: (video: Video, message: string) => void;
+}
+
 /**
  * VideoArchivist: Handles the heavy lifting of transforming raw transcripts
  * into semantic, summarized scenes.
@@ -75,6 +90,7 @@ class VideoArchivist {
     private participantService: ParticipantService,
     private locationService: LocationService,
     private activityService: ActivityService,
+    private progressCallbacks?: ProgressCallbacks,
   ) {}
 
   /**
@@ -83,7 +99,7 @@ class VideoArchivist {
   async processVideo(
     video: Video,
     options: { force?: boolean; concurrency: number },
-  ) {
+  ): Promise<{ scenesCreated: number; error?: string; warning?: string }> {
     logger.info(
       { videoId: video.id, filename: video.filename },
       '🎥 Processing video',
@@ -122,8 +138,13 @@ class VideoArchivist {
       .orderBy(transcripts.startTime);
 
     if (segments.length === 0) {
-      logger.warn({ videoId: video.id }, '⚠️ No transcripts found. Skipping.');
-      return;
+      const warning = 'No transcripts found. Skipping.';
+      if (this.progressCallbacks) {
+        this.progressCallbacks.onVideoWarning(video, warning);
+      } else {
+        logger.warn({ videoId: video.id }, `⚠️ ${warning}`);
+      }
+      return { scenesCreated: 0, warning };
     }
 
     const allChunks = this.createChunks(segments);
@@ -145,11 +166,16 @@ class VideoArchivist {
     });
 
     if (chunks.length === 0) {
-      logger.info(
-        { videoId: video.id, chunks: allChunks.length },
-        '✅ Video fully processed',
-      );
-      return;
+      const warning = 'Video fully processed';
+      if (this.progressCallbacks) {
+        this.progressCallbacks.onVideoComplete(video, allChunks.length);
+      } else {
+        logger.info(
+          { videoId: video.id, chunks: allChunks.length },
+          '✅ Video fully processed',
+        );
+      }
+      return { scenesCreated: 0, warning };
     }
 
     if (chunks.length < allChunks.length) {
@@ -172,8 +198,18 @@ class VideoArchivist {
       );
     }
 
-    await this.processChunksInParallel(video, chunks, options.concurrency);
+    if (this.progressCallbacks) {
+      this.progressCallbacks.onVideoStart(video, chunks.length);
+    }
+
+    const scenesCreated = await this.processChunksInParallel(
+      video,
+      chunks,
+      options.concurrency,
+    );
     await this.aggregateVideoMetadata(video.id);
+
+    return { scenesCreated };
   }
 
   /**
@@ -265,15 +301,32 @@ class VideoArchivist {
     video: Video,
     chunks: Chunk[],
     limit: number,
-  ) {
-    const activePromises = new Set<Promise<void>>();
+  ): Promise<number> {
+    const activePromises = new Set<Promise<string | null>>();
+    let completedCount = 0;
+    const totalChunks = chunks.length;
 
-    for (const chunk of chunks) {
-      const promise = this.summarizeChunk(video, chunk);
+    for (const [index, chunk] of chunks.entries()) {
+      const chunkNum = index + 1;
+      const promise = this.summarizeChunk(video, chunk, chunkNum, totalChunks);
       activePromises.add(promise);
 
-      // Remove itself from the set when done
-      promise.finally(() => activePromises.delete(promise));
+      promise
+        .then((title) => {
+          if (this.progressCallbacks) {
+            this.progressCallbacks.onChunkProgress(
+              video,
+              chunkNum,
+              totalChunks,
+              title,
+            );
+            if (title) {
+              this.progressCallbacks.onSceneCreated(video, title);
+            }
+          }
+          completedCount++;
+        })
+        .finally(() => activePromises.delete(promise));
 
       if (activePromises.size >= limit) {
         await Promise.race(activePromises);
@@ -281,6 +334,7 @@ class VideoArchivist {
     }
 
     await Promise.all(activePromises);
+    return completedCount;
   }
 
   /**
@@ -309,7 +363,12 @@ class VideoArchivist {
   /**
    * Individual worker unit: AI request + Database save
    */
-  private async summarizeChunk(video: Video, chunk: Chunk) {
+  private async summarizeChunk(
+    video: Video,
+    chunk: Chunk,
+    chunkNum: number,
+    totalChunks: number,
+  ): Promise<string | null> {
     const { startTime, endTime, text, rawSegments } = chunk;
 
     try {
@@ -420,15 +479,23 @@ class VideoArchivist {
       }
 
       logger.info(
-        { startTime: startTime.toFixed(0), title: data.title },
+        {
+          startTime: startTime.toFixed(0),
+          title: data.title,
+          chunkNum,
+          totalChunks,
+        },
         '✅ Scene created',
       );
+
+      return data.title;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error(
         { startTime: startTime.toFixed(0), error: message },
         '❌ Failed after 3 retries',
       );
+      return null;
     }
   }
 
@@ -505,6 +572,7 @@ async function main() {
       model: { type: 'string', default: 'summarizer-bulk-14b' },
       concurrency: { type: 'string', default: '6' },
       'video-concurrency': { type: 'string', default: '2' },
+      verbose: { type: 'boolean', default: false },
     },
     strict: true,
   });
@@ -520,15 +588,9 @@ async function main() {
     activityService.load(),
   ]);
 
-  const archivist = new VideoArchivist(
-    db,
-    getGenModel(values.model as GenerationModelName),
-    participantService,
-    locationService,
-    activityService,
-  );
   const concurrency = parseInt(values.concurrency!);
   const videoConcurrency = parseInt(values['video-concurrency']!);
+  const isVerbose = values.verbose!;
 
   // Determine target videos
   let targetVideos: Video[] = [];
@@ -541,7 +603,7 @@ async function main() {
     targetVideos = await db.select().from(videos);
   } else {
     logger.error(
-      'Usage: bun ingest:summarize --file <filename> | --all [--force] [--concurrency <n>]',
+      'Usage: bun ingest:summarize --file <filename> | --all [--force] [--concurrency <n>] [--verbose]',
     );
     process.exit(1);
   }
@@ -568,40 +630,216 @@ async function main() {
     });
   }
 
-  logger.info(
-    { videoCount: targetVideos.length, videoConcurrency },
-    '🎬 Archivist starting. Processing videos with LPT scheduling...',
+  // Stats tracking for final summary
+  const stats = {
+    totalVideos: targetVideos.length,
+    completedVideos: 0,
+    totalScenes: 0,
+    errors: [] as Array<{ videoId: number; filename: string; error: string }>,
+    warnings: [] as Array<{
+      videoId: number;
+      filename: string;
+      message: string;
+    }>,
+  };
+
+  // Setup TUI (if not verbose)
+  const tui = isVerbose ? null : new TUI();
+
+  if (!isVerbose) {
+    tui!.start(targetVideos.length);
+  } else {
+    logger.info(
+      { videoCount: targetVideos.length, videoConcurrency },
+      '🎬 Archivist starting. Processing videos with LPT scheduling...',
+    );
+  }
+
+  // Setup graceful shutdown
+  let shuttingDown = false;
+  process.on('SIGINT', () => {
+    if (!shuttingDown) {
+      shuttingDown = true;
+      if (!isVerbose && tui) {
+        tui.addActivity(
+          'info',
+          '⚠️ Finishing active videos before shutdown...',
+        );
+      } else {
+        logger.info('⚠️ Finishing active videos before shutdown...');
+      }
+    }
+  });
+
+  // Progress callbacks
+  const progressCallbacks: ProgressCallbacks = {
+    onVideoStart: (video, totalChunks) => {
+      if (!isVerbose && tui) {
+        tui.setActiveJob({
+          videoId: video.id,
+          filename: video.filename,
+          chunkNum: 0,
+          totalChunks,
+          currentTitle: null,
+        });
+      }
+    },
+    onChunkProgress: (video, chunkNum, totalChunks, title) => {
+      if (!isVerbose && tui) {
+        tui.setActiveJob({
+          videoId: video.id,
+          filename: video.filename,
+          chunkNum,
+          totalChunks,
+          currentTitle: title,
+        });
+      }
+    },
+    onSceneCreated: (video, title) => {
+      stats.totalScenes++;
+      if (!isVerbose && tui) {
+        tui.addActivity('success', `"${title}" (${video.filename})`);
+        tui.updateProgress(stats.completedVideos, stats.totalScenes);
+      }
+    },
+    onVideoComplete: (video, sceneCount) => {
+      stats.completedVideos++;
+      if (!isVerbose && tui) {
+        tui.removeActiveJob(video.id);
+        tui.updateProgress(stats.completedVideos, stats.totalScenes);
+      } else {
+        logger.info(
+          { videoId: video.id, filename: video.filename, scenes: sceneCount },
+          '✅ Video complete',
+        );
+      }
+    },
+    onVideoError: (video, error) => {
+      stats.errors.push({ videoId: video.id, filename: video.filename, error });
+      if (!isVerbose && tui) {
+        tui.showError(`${video.filename}: ${error}`, 10000);
+        tui.removeActiveJob(video.id);
+      } else {
+        logger.error({ videoId: video.id, error }, '❌ Video error');
+      }
+    },
+    onVideoWarning: (video, message) => {
+      stats.warnings.push({
+        videoId: video.id,
+        filename: video.filename,
+        message,
+      });
+      if (isVerbose) {
+        logger.warn({ videoId: video.id }, `⚠️ ${message}`);
+      }
+    },
+  };
+
+  const archivist = new VideoArchivist(
+    db,
+    getGenModel(values.model as GenerationModelName),
+    participantService,
+    locationService,
+    activityService,
+    isVerbose ? undefined : progressCallbacks,
   );
 
+  // Process videos with concurrency control
   const activePromises = new Set<Promise<void>>();
+  const pendingVideos = [...targetVideos];
 
-  for (const video of targetVideos) {
-    const promise = archivist
-      .processVideo(video, {
-        force: values.force,
-        concurrency,
-      })
-      .catch((error) => {
-        logger.error(
-          {
-            videoId: video.id,
-            error: error instanceof Error ? error.message : String(error),
-          },
-          '❌ Critical error processing video',
-        );
-      });
-    activePromises.add(promise);
+  while (pendingVideos.length > 0 || activePromises.size > 0) {
+    // Check if shutting down
+    if (shuttingDown && activePromises.size > 0) {
+      // Wait for active videos to complete
+      await Promise.all(activePromises);
+      break;
+    }
 
-    promise.finally(() => activePromises.delete(promise));
+    // Start new videos if we have capacity
+    while (
+      !shuttingDown &&
+      pendingVideos.length > 0 &&
+      activePromises.size < videoConcurrency
+    ) {
+      const video = pendingVideos.shift()!;
 
-    if (activePromises.size >= videoConcurrency) {
+      const promise = archivist
+        .processVideo(video, {
+          force: values.force,
+          concurrency,
+        })
+        .then((result) => {
+          if (result.warning) {
+            progressCallbacks.onVideoWarning(video, result.warning);
+          }
+          if (result.error) {
+            progressCallbacks.onVideoError(video, result.error);
+          } else {
+            progressCallbacks.onVideoComplete(video, result.scenesCreated);
+          }
+        })
+        .catch((error) => {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          progressCallbacks.onVideoError(video, message);
+        });
+
+      activePromises.add(promise);
+      promise.finally(() => activePromises.delete(promise));
+    }
+
+    // Wait for at least one to complete if we're at capacity
+    if (
+      activePromises.size >= videoConcurrency ||
+      (shuttingDown && activePromises.size > 0)
+    ) {
       await Promise.race(activePromises);
     }
   }
 
-  await Promise.all(activePromises);
+  // Finalize
+  if (!isVerbose && tui) {
+    tui.finalize({
+      totalVideos: stats.totalVideos,
+      completedVideos: stats.completedVideos,
+      totalScenes: stats.totalScenes,
+      errors: stats.errors,
+      warnings: stats.warnings,
+    });
+  } else {
+    logger.info('🏁 All videos processed.');
 
-  logger.info('🏁 All videos processed.');
+    // Print summary table in verbose mode
+    console.log(`\n┌${'─'.repeat(78)}┐`);
+    console.log(`│ 🏁 COMPLETE${' '.repeat(66)}│`);
+    console.log(`├${'─'.repeat(78)}┤`);
+    console.log(
+      `│ Total Videos: ${stats.completedVideos}/${stats.totalVideos}${' '.repeat(60 - stats.completedVideos.toString().length - stats.totalVideos.toString().length)}│`,
+    );
+    console.log(
+      `│ Total Scenes: ${stats.totalScenes}${' '.repeat(62 - stats.totalScenes.toString().length)}│`,
+    );
+
+    if (stats.errors.length > 0) {
+      console.log(
+        `│ Errors: ${stats.errors.length}${' '.repeat(68 - stats.errors.length.toString().length)}│`,
+      );
+      console.log(`├${'─'.repeat(78)}┤`);
+      console.log(`│ ERROR DETAILS:${' '.repeat(63)}│`);
+      for (const err of stats.errors.slice(0, 5)) {
+        const line = `  • ${err.filename}: ${err.error}`;
+        console.log(`│${line.slice(0, 78).padEnd(78)}│`);
+      }
+      if (stats.errors.length > 5) {
+        console.log(
+          `│  ... and ${stats.errors.length - 5} more${' '.repeat(64 - (stats.errors.length - 5).toString().length)}│`,
+        );
+      }
+    }
+
+    console.log(`└${'─'.repeat(78)}┘`);
+  }
 }
 
 main().catch((error: unknown) => {

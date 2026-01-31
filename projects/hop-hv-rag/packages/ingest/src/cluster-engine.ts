@@ -1,5 +1,5 @@
 import { getGenModel, type GenerationModelName } from '@hop-hv-rag/ai';
-import { generateText } from 'ai';
+import { generateText, Output, NoObjectGeneratedError } from 'ai';
 import { z } from 'zod';
 import { createDb } from '@hop-hv-rag/db';
 import { sql } from 'drizzle-orm';
@@ -47,7 +47,7 @@ export async function runClustering<
     concurrency = 16,
     categoryFallback,
     validCategories,
-    model: modelName = 'summarizer-bulk',
+    model: modelName = 'summarizer-bulk-14b',
   } = config;
 
   const db = createDb(dbPath);
@@ -107,20 +107,15 @@ export async function runClustering<
         'Processing batch',
       );
       try {
-        const { text } = await generateText({
+        const { output: classificationsOutput } = await generateText({
           model,
           system: systemPrompt,
           prompt: `Items to classify (one per line):\n${currentBatch.join('\n')}`,
+          output: Output.object({
+            schema,
+          }),
         });
 
-        // Find the JSON block in the response if the AI included other text
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-          throw new Error(`No JSON found in AI response: ${text}`);
-        }
-
-        const rawObject = JSON.parse(jsonMatch[0]);
-        const classificationsOutput = schema.parse(rawObject);
         const classifications = classificationsOutput.classifications;
 
         currentBatch.forEach((original, idx) => {
@@ -131,23 +126,13 @@ export async function runClustering<
             ) || classifications[idx];
 
           if (result) {
-            const rawCategory = String(
-              result.category || result.class || result.k || categoryFallback,
-            )
-              .toUpperCase()
-              .trim();
+            const rawCategory = String(result.category).toUpperCase().trim();
             registry[original] = {
-              canonical: String(
-                result.canonical ||
-                  result.normalized ||
-                  result.name ||
-                  result.p ||
-                  original,
-              ),
+              canonical: String(result.canonical),
               category: validCategories.includes(rawCategory)
                 ? rawCategory
                 : categoryFallback,
-              reasoning: String(result.reasoning || result.r || 'Processed'),
+              reasoning: String(result.reasoning),
             };
           } else {
             registry[original] = {
@@ -160,10 +145,21 @@ export async function runClustering<
 
         await Bun.write(outputPath, JSON.stringify(registry, null, 2));
       } catch (error) {
-        logger.error(
-          { batchIdx: batchIdx + 1, error },
-          'Error processing batch',
-        );
+        if (NoObjectGeneratedError.isInstance(error)) {
+          logger.error(
+            {
+              batchIdx: batchIdx + 1,
+              text: error.text,
+              response: error.response,
+            },
+            'No object generated - model did not return valid JSON',
+          );
+        } else {
+          logger.error(
+            { batchIdx: batchIdx + 1, error },
+            'Error processing batch',
+          );
+        }
       }
     })(remainingInBatch, i / batchSize);
 

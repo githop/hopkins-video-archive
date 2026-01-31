@@ -57,29 +57,22 @@ export function VideoModal({ source, isOpen, onClose }: VideoModalProps) {
 
         {/* Video Player */}
         <div className="relative aspect-video">
-          {video.hasLocalFile ? (
-            <video
-              ref={videoRef}
-              src={video.videoUrl}
-              controls
-              className="w-full h-full"
-              playsInline
-              crossOrigin="anonymous"
-            >
-              <track
-                kind="subtitles"
-                src={transcriptUrl}
-                srcLang="en"
-                label="English"
-                default
-              />
-            </video>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full bg-gray-800 text-white">
-              <p className="text-lg">Video file not available</p>
-              <p className="text-sm text-gray-400 mt-2">{video.filename}</p>
-            </div>
-          )}
+          <video
+            ref={videoRef}
+            src={video.videoUrl}
+            controls
+            className="w-full h-full"
+            playsInline
+            crossOrigin="anonymous"
+          >
+            <track
+              kind="subtitles"
+              src={transcriptUrl}
+              srcLang="en"
+              label="English"
+              default
+            />
+          </video>
         </div>
 
         {/* Scene Info */}

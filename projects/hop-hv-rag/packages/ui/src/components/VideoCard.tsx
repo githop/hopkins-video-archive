@@ -10,16 +10,12 @@ interface VideoCardProps {
 export function VideoCard({ source, isUsed }: VideoCardProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Only show click handler if video has local file
-  const canWatch = source.video.hasLocalFile;
-
   return (
     <>
       <div
-        onClick={() => canWatch && setIsModalOpen(true)}
+        onClick={() => setIsModalOpen(true)}
         className={`
-          group block rounded-lg overflow-hidden border transition-all duration-200
-          ${canWatch ? 'cursor-pointer' : 'cursor-default'}
+          group block rounded-lg overflow-hidden border transition-all duration-200 cursor-pointer
           ${
             isUsed
               ? 'border-action-primary opacity-100 shadow-md'
@@ -40,23 +36,21 @@ export function VideoCard({ source, isUsed }: VideoCardProps) {
           />
 
           {/* Play Button Overlay */}
-          {canWatch && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
-              <div
-                className={`
-                w-12 h-12 rounded-full flex items-center justify-center
-                ${isUsed ? 'bg-action-primary' : 'bg-background-surface'}
-                shadow-lg
-              `}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
+            <div
+              className={`
+              w-12 h-12 rounded-full flex items-center justify-center
+              ${isUsed ? 'bg-action-primary' : 'bg-background-surface'}
+              shadow-lg
+            `}
+            >
+              <span
+                className={`text-xl ${isUsed ? 'text-action-fg' : 'text-text-primary'}`}
               >
-                <span
-                  className={`text-xl ${isUsed ? 'text-action-fg' : 'text-text-primary'}`}
-                >
-                  ▶
-                </span>
-              </div>
+                ▶
+              </span>
             </div>
-          )}
+          </div>
 
           {/* Timestamp Badge */}
           <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/70 text-white text-xs font-mono rounded">
@@ -97,7 +91,7 @@ export function VideoCard({ source, isUsed }: VideoCardProps) {
 
             {/* Watch Status */}
             <span className="text-xs text-text-muted font-mono">
-              {canWatch ? source.citationId : 'Video unavailable'}
+              {source.citationId}
             </span>
           </div>
         </div>
