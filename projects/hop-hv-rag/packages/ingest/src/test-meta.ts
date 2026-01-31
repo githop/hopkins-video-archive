@@ -1,4 +1,4 @@
-import { parseFilename } from '@hop-hv-rag/core';
+import { parseFilename, logger } from '@hop-hv-rag/core';
 
 const testFiles = [
   '1986-1987-2.json',
@@ -12,13 +12,13 @@ const testFiles = [
   '1999SanFrancisco.json',
 ];
 
-console.log('Testing Metadata Parser:\n');
+logger.print('Testing Metadata Parser:\n');
 
 testFiles.forEach((file) => {
   const meta = parseFilename(file);
-  console.log(`File: ${file}`);
-  console.log(`  Title:      "${meta.title}"`);
-  console.log(`  Year:       ${meta.year}`);
-  console.log(`  RecordedAt: ${meta.recordedAt}`);
-  console.log('-'.repeat(30));
+  logger.print(`File: ${file}`);
+  logger.print(`  Title:      "${meta.title}"`);
+  logger.print(`  Year:       ${meta.year}`);
+  logger.print(`  RecordedAt: ${meta.recordedAt}`);
+  logger.print('-'.repeat(30));
 });

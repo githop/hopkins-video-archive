@@ -5,6 +5,7 @@ import {
   ParticipantService,
   LocationService,
   ActivityService,
+  logger,
 } from '@hop-hv-rag/core';
 import { FamilyArchivist } from './src/archivist';
 import {
@@ -49,7 +50,7 @@ async function collectQueryResult(
 async function runEval() {
   const promptsFile = Bun.file(EVAL_PROMPTS_PATH);
   if (!(await promptsFile.exists())) {
-    console.error(`Eval prompts not found at: ${EVAL_PROMPTS_PATH}`);
+    logger.error(`Eval prompts not found at: ${EVAL_PROMPTS_PATH}`);
     process.exit(1);
   }
 
@@ -86,7 +87,7 @@ async function runEval() {
   await archivist.init();
 
   for (const item of prompts) {
-    console.log(`\n--- [${item.id}] Starting: ${item.prompt} ---`);
+    logger.print(`\n--- [${item.id}] Starting: ${item.prompt} ---`);
 
     try {
       const result = await collectQueryResult(archivist, item.prompt);
@@ -97,21 +98,23 @@ async function runEval() {
       markdown += `### Result:\n${result}\n\n`;
       markdown += `---\n\n`;
     } catch (error: unknown) {
-      console.error(`Error running [${item.id}]:`, error);
+      logger.error({ error }, `Error running [${item.id}]`);
       const message = error instanceof Error ? error.message : 'Unknown error';
       markdown += `## ${item.id}: ${item.category}\n**Error:** ${message}\n\n---\n\n`;
     }
 
-    console.log(`[${item.id}] Finished.`);
+    logger.print(`[${item.id}] Finished.`);
 
     if (prompts.indexOf(item) < prompts.length - 1) {
-      console.log(`Waiting ${DELAY_MS}ms for VRAM cleanup...`);
+      logger.print(`Waiting ${DELAY_MS}ms for VRAM cleanup...`);
       await sleep(DELAY_MS);
     }
   }
 
   await Bun.write(OUTPUT_PATH, markdown);
-  console.log(`\nEvaluation complete! Results saved to: ${OUTPUT_PATH}`);
+  logger.print(`\nEvaluation complete! Results saved to: ${OUTPUT_PATH}`);
 }
 
-runEval().catch(console.error);
+runEval().catch((err) => {
+  logger.error(err, 'Unhandled error in runEval');
+});

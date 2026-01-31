@@ -1,4 +1,4 @@
-import { pino, type Logger } from 'pino';
+import { pino, type Logger as PinoLogger } from 'pino';
 
 const isProduction = process.env.NODE_ENV === 'production';
 const logLevel = process.env.LOG_LEVEL || (isProduction ? 'info' : 'debug');
@@ -14,9 +14,18 @@ const transport = isProduction
       },
     };
 
-export const logger: Logger = pino({
+const pinoInstance = pino({
   level: logLevel,
   transport,
 });
 
-export type { Logger } from 'pino';
+export type Logger = PinoLogger & {
+  print: (message: string, ...args: any[]) => void;
+};
+
+export const logger = Object.assign(pinoInstance, {
+  print: (message: string, ...args: any[]) => {
+    // eslint-disable-next-line no-console
+    console.log(message, ...args);
+  },
+}) as Logger;

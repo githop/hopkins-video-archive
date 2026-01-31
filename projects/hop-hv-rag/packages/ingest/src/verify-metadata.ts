@@ -14,18 +14,18 @@ async function main() {
     .select({ value: count() })
     .from(transcripts);
 
-  console.log('--- Database Summary ---');
-  console.log(`Total Videos:      ${videoCount?.value}`);
-  console.log(`Total Segments:    ${transcriptCount?.value}`);
+  logger.print('--- Database Summary ---');
+  logger.print(`Total Videos:      ${videoCount?.value}`);
+  logger.print(`Total Segments:    ${transcriptCount?.value}`);
 
   if (videoCount?.value && videoCount.value > 0) {
-    console.log('\n--- Sample Ingestion ---');
+    logger.print('\n--- Sample Ingestion ---');
     const [sampleVideo] = await db.select().from(videos).limit(1);
     if (sampleVideo) {
-      console.log(`Video: ${sampleVideo.filename}`);
-      console.log(`Title: ${sampleVideo.title}`);
-      console.log(`Year:  ${sampleVideo.year}`);
-      console.log(`Drive: ${sampleVideo.driveFileId}`);
+      logger.print(`Video: ${sampleVideo.filename}`);
+      logger.print(`Title: ${sampleVideo.title}`);
+      logger.print(`Year:  ${sampleVideo.year}`);
+      logger.print(`Drive: ${sampleVideo.driveFileId}`);
 
       const sampleSegments = await db
         .select()
@@ -33,13 +33,15 @@ async function main() {
         .where(eq(transcripts.videoId, sampleVideo.id))
         .limit(3);
 
-      console.log('Segments (first 3):');
+      logger.print('Segments (first 3):');
       sampleSegments.forEach((s) => {
-        console.log(
+        logger.print(
           `  [${s.startTime.toFixed(2)} - ${s.endTime.toFixed(2)}] ${s.text}`,
         );
       });
     }
+  } else {
+    logger.print('\nNo videos found in DB.');
   }
 }
 

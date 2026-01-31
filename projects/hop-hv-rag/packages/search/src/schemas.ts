@@ -28,7 +28,9 @@ export const SourceSchema = z.object({
     year: z.number().nullable(),
     yearStart: z.number().nullable().optional(),
     yearEnd: z.number().nullable().optional(),
-    driveId: z.string(),
+    filename: z.string(), // Video filename for local streaming
+    videoUrl: z.string(), // URL with timestamp: /videos/filename.m4v#t=95
+    hasLocalFile: z.boolean(), // Whether local video file exists
   }),
   timestamp: z.object({
     startSeconds: z.number(),

@@ -19,7 +19,7 @@ import {
   ActivityService,
   logger,
 } from '@hop-hv-rag/core';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { parseArgs } from 'node:util';
 
 // Calculate project root (2 levels up from packages/search)
@@ -34,6 +34,14 @@ const { values } = parseArgs({
       type: 'string',
       short: 'u',
       default: join(PROJECT_ROOT, 'packages/ui/dist'),
+    },
+    videoDir: {
+      type: 'string',
+      default: join(PROJECT_ROOT, '..', 'whisper-project', 'videos'),
+    },
+    transcriptsDir: {
+      type: 'string',
+      // default: sibling of videoDir/transcripts if not provided
     },
     ...parseArgsModelOptions,
   },
@@ -52,6 +60,15 @@ const PORT = parseInt(
   10,
 );
 const THUMBNAILS_DIR = join(DATA_DIR, 'thumbnails');
+const VIDEO_DIR =
+  typeof values.videoDir === 'string'
+    ? values.videoDir
+    : join(PROJECT_ROOT, '..', 'whisper-project', 'videos');
+
+const TRANSCRIPTS_DIR =
+  typeof values.transcriptsDir === 'string'
+    ? values.transcriptsDir
+    : join(VIDEO_DIR, '..', 'transcripts');
 
 // Initialize services and database with explicit paths
 const dbPath = join(DATA_DIR, 'hv-rag.db');
@@ -109,6 +126,94 @@ app.get(
     rewriteRequestPath: (path) => path.replace(/^\/thumbnails/, ''),
   }),
 );
+
+/**
+ * Video streaming endpoint with HTTP range request support.
+ * Enables efficient seeking and playback without full file download.
+ */
+app.get('/videos/:filename', async (c) => {
+  const filename = basename(c.req.param('filename'));
+  const videoPath = join(VIDEO_DIR, filename);
+
+  logger.debug({ filename, videoPath }, 'Video request');
+
+  const file = Bun.file(videoPath);
+
+  if (!(await file.exists())) {
+    logger.warn({ filename }, 'Video not found');
+    return c.json({ error: 'Video not found' }, 404);
+  }
+
+  const fileSize = file.size;
+  const range = c.req.header('range');
+
+  // Determine MIME type based on extension
+  const ext = filename.split('.').pop()?.toLowerCase();
+  const mimeType = ext === 'mp4' ? 'video/mp4' : 'video/x-m4v';
+
+  if (range) {
+    // Parse range header for partial content
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const chunkSize = end - start + 1;
+
+    logger.debug({ filename, start, end, chunkSize }, 'Serving video range');
+
+    // Use Bun's slice for efficient range serving
+    const chunk = file.slice(start, end + 1);
+
+    return new Response(chunk, {
+      status: 206,
+      headers: {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': String(chunkSize),
+        'Content-Type': mimeType,
+      },
+    });
+  }
+
+  // Full file request (browsers typically use ranges anyway)
+  logger.debug({ filename, fileSize }, 'Serving full video');
+
+  return new Response(file, {
+    headers: {
+      'Content-Type': mimeType,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': String(fileSize),
+    },
+  });
+});
+
+/**
+ * Transcript serving endpoint for VTT subtitle files.
+ */
+app.get('/transcripts/:filename', async (c) => {
+  const filename = basename(c.req.param('filename'));
+  const transcriptPath = join(TRANSCRIPTS_DIR, filename);
+
+  logger.debug({ filename, transcriptPath }, 'Transcript request');
+
+  try {
+    const file = Bun.file(transcriptPath);
+
+    if (!(await file.exists())) {
+      logger.warn({ filename }, 'Transcript not found');
+      return c.json({ error: 'Transcript not found' }, 404);
+    }
+
+    return new Response(file, {
+      headers: {
+        'Content-Type': 'text/vtt',
+        'Cache-Control': 'public, max-age=86400',
+      },
+    });
+  } catch (error) {
+    logger.warn({ filename, error }, 'Transcript error');
+    return c.json({ error: 'Transcript not found' }, 404);
+  }
+});
 
 /**
  * Unified query endpoint.

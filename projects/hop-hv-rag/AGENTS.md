@@ -46,6 +46,7 @@ Curiosity is encouraged, but data integrity is paramount. Before performing any 
 - **Type Safety**: Strictly avoid `any`. Use Zod for runtime validation and Drizzle `$infer` for DB types for sql queries. NEVER use type assertions (`as Type`).
 - **Generics**: Use the generic arguments provided by Drizzle and other libraries (e.g., `db.select().from(table).all<Type>()`) instead of type assertions.
 - **Entry Points**: Use `if (import.meta.main)` for CLI scripts.
+- **Logging**: Use the centralized `logger` from `@hop-hv-rag/core` instead of `console.log` for consistent formatting and levels.
 
 ### Database & Vectors
 

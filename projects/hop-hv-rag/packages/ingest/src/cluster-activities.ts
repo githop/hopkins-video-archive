@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { logger } from '@hop-hv-rag/core';
 import { runClustering } from './cluster-engine.ts';
 
 const DATA_DIR = `${import.meta.dir}/../../../data`;
@@ -79,4 +80,6 @@ IMPORTANT:
   });
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  logger.error(err, 'Error running activity clustering');
+});

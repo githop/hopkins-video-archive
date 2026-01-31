@@ -7,7 +7,8 @@ export interface HybridResult extends Scene {
   videoYearEnd: number | null;
   videoParticipants: string;
   videoLocations: string;
-  videoDriveFileId: string;
+  videoFilename: string;
+  localPath: string | null;
   canonicalParticipants?: string;
   canonicalLocations?: string;
   score?: number;
@@ -18,7 +19,8 @@ export interface SceneResult {
   title: string | null;
   videoTitle: string;
   videoYear: number | null;
-  driveId: string;
+  filename: string;
+  hasLocalFile: boolean;
   startTime: number;
   timestampLabel: string;
   summary: string;

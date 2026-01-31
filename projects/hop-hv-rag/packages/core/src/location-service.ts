@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { logger } from './logger.ts';
 
 export interface LocationRegistryEntry {
   canonical: string;
@@ -23,7 +24,7 @@ export class LocationService {
     if (await file.exists()) {
       this.registry = await file.json();
     } else {
-      console.warn(`Location registry not found at ${this.registryPath}`);
+      logger.warn(`Location registry not found at ${this.registryPath}`);
     }
   }
 

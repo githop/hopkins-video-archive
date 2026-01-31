@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { logger } from './logger.ts';
 
 export type ActivityCategory =
   | 'SPORT'
@@ -30,7 +31,7 @@ export class ActivityService {
     if (await file.exists()) {
       this.registry = await file.json();
     } else {
-      console.warn(`Activity registry not found at ${this.registryPath}`);
+      logger.warn(`Activity registry not found at ${this.registryPath}`);
     }
   }
 

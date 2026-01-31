@@ -94,19 +94,19 @@ async function validateParticipantRegistry() {
     normalized: entries.filter(([k, v]) => k !== v.canonical).length,
   };
 
-  console.log('📊 Participant Registry Validation Report');
-  console.log('=========================================');
-  console.log(`Total entries: ${stats.total}`);
-  console.log(`  PERSON: ${stats.person}`);
-  console.log(`  ROLE: ${stats.role}`);
-  console.log(`  DISCARD: ${stats.discard}`);
-  console.log(`  Normalized: ${stats.normalized}`);
-  console.log('');
+  logger.print('📊 Participant Registry Validation Report');
+  logger.print('=========================================');
+  logger.print(`Total entries: ${stats.total}`);
+  logger.print(`  PERSON: ${stats.person}`);
+  logger.print(`  ROLE: ${stats.role}`);
+  logger.print(`  DISCARD: ${stats.discard}`);
+  logger.print(`  Normalized: ${stats.normalized}`);
+  logger.print('');
 
   if (issues.length > 0) {
-    console.log(issues.join('\n'));
+    logger.print(issues.join('\n'));
   } else {
-    console.log('✅ No issues found!');
+    logger.print('✅ No issues found!');
   }
 
   return { stats, issues };
@@ -247,19 +247,19 @@ async function validateLocationRegistry() {
     normalized: entries.filter(([k, v]) => k !== v.canonical).length,
   };
 
-  console.log('\n📍 Location Registry Validation Report');
-  console.log('======================================');
-  console.log(`Total entries: ${stats.total}`);
-  console.log(`  PLACE: ${stats.place}`);
-  console.log(`  SETTING: ${stats.setting}`);
-  console.log(`  DISCARD: ${stats.discard}`);
-  console.log(`  Normalized: ${stats.normalized}`);
-  console.log('');
+  logger.print('\n📍 Location Registry Validation Report');
+  logger.print('======================================');
+  logger.print(`Total entries: ${stats.total}`);
+  logger.print(`  PLACE: ${stats.place}`);
+  logger.print(`  SETTING: ${stats.setting}`);
+  logger.print(`  DISCARD: ${stats.discard}`);
+  logger.print(`  Normalized: ${stats.normalized}`);
+  logger.print('');
 
   if (issues.length > 0) {
-    console.log(issues.join('\n'));
+    logger.print(issues.join('\n'));
   } else {
-    console.log('✅ No issues found!');
+    logger.print('✅ No issues found!');
   }
 
   return { stats, issues };
@@ -270,9 +270,9 @@ async function validateActivityRegistry() {
   const file = Bun.file(registryPath);
 
   if (!(await file.exists())) {
-    console.log('\n📍 Activity Registry Validation Report');
-    console.log('======================================');
-    console.log('Registry file not found, skipping validation.');
+    logger.print('\n📍 Activity Registry Validation Report');
+    logger.print('======================================');
+    logger.print('Registry file not found, skipping validation.');
     return { stats: null, issues: [] };
   }
 
@@ -406,21 +406,21 @@ async function validateActivityRegistry() {
     normalized: entries.filter(([k, v]) => k !== v.canonical).length,
   };
 
-  console.log('\n🎯 Activity Registry Validation Report');
-  console.log('======================================');
-  console.log(`Total entries: ${stats.total}`);
-  console.log(`  SPORT: ${stats.sport}`);
-  console.log(`  RECREATION: ${stats.recreation}`);
-  console.log(`  HOLIDAY: ${stats.holiday}`);
-  console.log(`  MILESTONE: ${stats.milestone}`);
-  console.log(`  DISCARD: ${stats.discard}`);
-  console.log(`  Normalized: ${stats.normalized}`);
-  console.log('');
+  logger.print('\n🎯 Activity Registry Validation Report');
+  logger.print('======================================');
+  logger.print(`Total entries: ${stats.total}`);
+  logger.print(`  SPORT: ${stats.sport}`);
+  logger.print(`  RECREATION: ${stats.recreation}`);
+  logger.print(`  HOLIDAY: ${stats.holiday}`);
+  logger.print(`  MILESTONE: ${stats.milestone}`);
+  logger.print(`  DISCARD: ${stats.discard}`);
+  logger.print(`  Normalized: ${stats.normalized}`);
+  logger.print('');
 
   if (issues.length > 0) {
-    console.log(issues.join('\n'));
+    logger.print(issues.join('\n'));
   } else {
-    console.log('✅ No issues found!');
+    logger.print('✅ No issues found!');
   }
 
   return { stats, issues };

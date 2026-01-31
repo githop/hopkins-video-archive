@@ -161,6 +161,10 @@ export class FamilyArchivist {
       // Use relative thumbnail path directly
       const thumbnailUrl = r.thumbnailPath || '';
 
+      // Build video URL with timestamp for local streaming
+      const videoUrl = `/videos/${r.videoFilename}#t=${Math.floor(r.startTime)}`;
+      const hasLocalFile = !!r.localPath;
+
       sources.push({
         sceneId: r.id,
         citationId: index + 1, // Assign [1], [2], [3], etc.
@@ -173,7 +177,9 @@ export class FamilyArchivist {
           year: r.videoYear,
           yearStart: r.videoYearStart,
           yearEnd: r.videoYearEnd,
-          driveId: r.videoDriveFileId,
+          filename: r.videoFilename,
+          videoUrl,
+          hasLocalFile,
         },
         timestamp: {
           startSeconds: r.startTime,
@@ -207,7 +213,7 @@ export class FamilyArchivist {
         return [
           `SOURCE [${s.citationId}]`,
           `VIDEO: ${s.video.title}`,
-          `DRIVE_ID: ${s.video.driveId}`,
+          `FILENAME: ${s.video.filename}`,
           `YEAR: ${s.video.year || 'Unknown'}`,
           `TIMESTAMP: ${s.timestamp.formatted}`,
           `SCENE: ${s.sceneTitle}`,
@@ -440,7 +446,8 @@ export class FamilyArchivist {
         v.year_end as videoYearEnd,
         v.participants as videoParticipants,
         v.locations as videoLocations,
-        v.drive_file_id as videoDriveFileId
+        v.filename as videoFilename,
+        v.local_path as localPath
       FROM (
         SELECT rowid, vec_distance_cosine(scene_embedding, '${queryVecJson}') as distance
         FROM vec_scenes
@@ -472,7 +479,8 @@ export class FamilyArchivist {
         v.year_end as videoYearEnd,
         v.participants as videoParticipants,
         v.locations as videoLocations,
-        v.drive_file_id as videoDriveFileId
+        v.filename as videoFilename,
+        v.local_path as localPath
       FROM fts_scenes f
       JOIN scenes s ON s.id = f.id
       JOIN videos v ON v.id = s.video_id

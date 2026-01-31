@@ -199,7 +199,7 @@ async function main() {
     }),
   );
 
-  console.log('\nDone!');
+  logger.print('\nDone!');
 }
 
 main().catch((err) => {

@@ -21,7 +21,7 @@ async function main() {
   const limit = parseInt(values.limit as string);
 
   const [sceneCount] = await db.select({ value: count() }).from(scenes);
-  console.log(`\n📊 Total Scenes in DB: ${sceneCount?.value}\n`);
+  logger.print(`\n📊 Total Scenes in DB: ${sceneCount?.value}\n`);
 
   let targetScenes;
 
@@ -33,14 +33,14 @@ async function main() {
       logger.error(`❌ Video not found: ${values.file}`);
       return;
     }
-    console.log(`--- Scenes for: ${video.filename} ---`);
+    logger.print(`--- Scenes for: ${video.filename} ---`);
     targetScenes = await db
       .select()
       .from(scenes)
       .where(eq(scenes.videoId, video.id))
       .orderBy(scenes.startTime);
   } else {
-    console.log(`--- Latest ${limit} Summarized Scenes ---`);
+    logger.print(`--- Latest ${limit} Summarized Scenes ---`);
     targetScenes = await db
       .select()
       .from(scenes)
@@ -54,16 +54,16 @@ async function main() {
     )[0];
     const timeStr = `${Math.floor(scene.startTime / 60)}:${(scene.startTime % 60).toString().padStart(2, '0').split('.')[0]}`;
 
-    console.log(`\n[${video?.filename || 'Unknown'}] @ ${timeStr}`);
-    console.log(`TITLE:        ${scene.title}`);
-    console.log(`SUMMARY:      ${scene.summary}`);
-    console.log(
+    logger.print(`\n[${video?.filename || 'Unknown'}] @ ${timeStr}`);
+    logger.print(`TITLE:        ${scene.title}`);
+    logger.print(`SUMMARY:      ${scene.summary}`);
+    logger.print(
       `PARTICIPANTS: ${scene.participants ? JSON.parse(scene.participants).join(', ') : 'None'}`,
     );
-    console.log(
+    logger.print(
       `LOCATIONS:    ${scene.locations ? JSON.parse(scene.locations).join(', ') : 'None'}`,
     );
-    console.log(`--------------------------------------------------`);
+    logger.print(`--------------------------------------------------`);
   }
 }
 

@@ -79,8 +79,8 @@ async function main() {
         spinner.stop();
       }
 
-      console.log('--- Response ---\n');
-      console.log(chunk.answer);
+      logger.print('--- Response ---\n');
+      logger.print(chunk.answer);
 
       if (chunk.sources.length > 0) {
         // Group sources by used vs unused
@@ -92,25 +92,27 @@ async function main() {
         );
 
         if (usedSources.length > 0) {
-          console.log('\n--- Cited Sources ---\n');
+          logger.print('\n--- Cited Sources ---\n');
           for (const s of usedSources) {
-            console.log(
+            logger.print(
               `[${s.citationId}] ${s.video.title} @ ${s.timestamp.formatted}`,
             );
-            console.log(`  ${s.sceneTitle}`);
-            console.log(
-              `  https://drive.google.com/file/d/${s.video.driveId}\n`,
-            );
+            logger.print(`  ${s.sceneTitle}`);
+            if (s.video.hasLocalFile) {
+              logger.print(`  ${s.video.videoUrl}\n`);
+            } else {
+              logger.print(`  Video not available locally\n`);
+            }
           }
         }
 
         if (unusedSources.length > 0) {
-          console.log('\n--- Additional Context ---\n');
+          logger.print('\n--- Additional Context ---\n');
           for (const s of unusedSources) {
-            console.log(
+            logger.print(
               `[${s.citationId}] ${s.video.title} @ ${s.timestamp.formatted}`,
             );
-            console.log(`  ${s.sceneTitle}`);
+            logger.print(`  ${s.sceneTitle}`);
           }
         }
       }

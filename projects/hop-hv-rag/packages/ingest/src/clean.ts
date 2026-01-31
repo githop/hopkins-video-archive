@@ -46,10 +46,12 @@ async function main() {
     logger.info(`  Skipped (not found): ${skipped.join(', ')}`);
   }
 
-  console.log('\nNext steps:');
-  console.log('  1. Run: bun run ingest:init-db');
-  console.log('  2. Run: bun run ingest:init-vec');
-  console.log('  3. Run: bun run ingest:seed');
+  logger.print('\nNext steps:');
+  logger.print('  1. Run: bun run ingest:init-db');
+  logger.print('  2. Run: bun run ingest:init-vec');
+  logger.print('  3. Run: bun run ingest:seed');
 }
 
-main().catch((err) => logger.error(err));
+main().catch((err) => {
+  logger.error(err, 'Error during reset');
+});

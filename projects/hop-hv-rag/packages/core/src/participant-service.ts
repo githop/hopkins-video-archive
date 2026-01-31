@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { logger } from './logger.ts';
 
 export interface ParticipantRegistryEntry {
   canonical: string;
@@ -25,7 +26,7 @@ export class ParticipantService {
     if (await file.exists()) {
       this.registry = await file.json();
     } else {
-      console.warn(`Participant registry not found at ${this.registryPath}`);
+      logger.warn(`Participant registry not found at ${this.registryPath}`);
     }
   }
 
