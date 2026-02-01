@@ -1,10 +1,11 @@
 import { createDb, videos, type Video } from '@hop-hv-rag/db';
-import { getEmbedModel, type EmbeddingModelName } from '@hop-hv-rag/ai';
+import { getEmbedModel } from '@hop-hv-rag/ai';
 import { embedMany, type EmbeddingModel } from 'ai';
 import { join } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import { parseArgs } from 'node:util';
 import { logger } from '@hop-hv-rag/core';
+import { EmbedModelFlagOption, parseEmbedModelFlag } from './cli-flags.ts';
 
 /**
  * Configuration
@@ -93,7 +94,7 @@ async function main() {
       file: { type: 'string' },
       all: { type: 'boolean', default: false },
       force: { type: 'boolean', default: false },
-      model: { type: 'string', default: 'embed-small' },
+      'embed-model': EmbedModelFlagOption,
       batchSize: { type: 'string', default: '50' },
     },
     strict: true,
@@ -102,7 +103,7 @@ async function main() {
   const db = createDb(DB_PATH);
   const embedder = new VideoEmbedder(
     db,
-    getEmbedModel(values.model as EmbeddingModelName),
+    getEmbedModel(parseEmbedModelFlag(values['embed-model'])),
   );
   const batchSize = parseInt(values.batchSize!);
 

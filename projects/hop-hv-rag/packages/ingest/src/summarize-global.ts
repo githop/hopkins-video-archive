@@ -5,13 +5,14 @@ import {
   type Video,
   type Scene,
 } from '@hop-hv-rag/db';
-import { getGenModel, type GenerationModelName } from '@hop-hv-rag/ai';
+import { getGenModel } from '@hop-hv-rag/ai';
 import { logger } from '@hop-hv-rag/core';
 import { generateText, type LanguageModel } from 'ai';
 import { eq } from 'drizzle-orm';
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { GLOBAL_SUMMARY_PROMPT } from './prompts.ts';
+import { GenModelFlagOption, parseGenModelFlag } from './cli-flags.ts';
 
 /**
  * Configuration & Constants
@@ -147,7 +148,7 @@ async function main() {
       file: { type: 'string' },
       all: { type: 'boolean', default: false },
       force: { type: 'boolean', default: false },
-      model: { type: 'string', default: 'summarizer-bulk-14b' },
+      'gen-model': GenModelFlagOption,
       concurrency: { type: 'string', default: '4' },
     },
     strict: true,
@@ -157,7 +158,7 @@ async function main() {
 
   const archivist = new GlobalArchivist(
     db,
-    getGenModel(values.model as GenerationModelName),
+    getGenModel(parseGenModelFlag(values['gen-model'])),
   );
 
   const concurrency = parseInt(values.concurrency!);
@@ -173,7 +174,7 @@ async function main() {
     targetVideos = await db.select().from(videos);
   } else {
     logger.error(
-      'Usage: bun ingest:global --file <filename> | --all [--force] [--model <name>] [--concurrency <n>]',
+      'Usage: bun ingest:global --file <filename> | --all [--force] [--gen-model <name>] [--concurrency <n>]',
     );
     process.exit(1);
   }

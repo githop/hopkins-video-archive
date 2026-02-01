@@ -1,13 +1,23 @@
 import { logger } from '@hop-hv-rag/core';
+import { parseArgs } from 'node:util';
 import { runClustering } from './cluster-engine.ts';
 import {
   PARTICIPANT_CLUSTERING_PROMPT,
   ParticipantClusteringSchema,
 } from './prompts.ts';
+import { GenModelFlagOption, parseGenModelFlag } from './cli-flags.ts';
 
 const DATA_DIR = `${import.meta.dir}/../../../data`;
 
 async function main() {
+  const { values } = parseArgs({
+    args: Bun.argv.slice(2),
+    options: {
+      'gen-model': GenModelFlagOption,
+    },
+    strict: true,
+  });
+
   await runClustering({
     inputPath: `${DATA_DIR}/unique-participants.json`,
     outputPath: `${DATA_DIR}/participant-registry.json`,
@@ -18,7 +28,7 @@ async function main() {
     categoryFallback: 'PERSON',
     validCategories: ['PERSON', 'ROLE', 'DISCARD'],
     schema: ParticipantClusteringSchema,
-    model: 'summarizer-bulk-14b',
+    model: parseGenModelFlag(values['gen-model']),
     systemPrompt: PARTICIPANT_CLUSTERING_PROMPT,
   });
 }

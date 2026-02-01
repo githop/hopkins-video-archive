@@ -15,6 +15,7 @@ import {
   getTemporalExtractionPrompt,
   TemporalExtractionSchema,
 } from './prompts.ts';
+import { GenModelFlagOption, parseGenModelFlag } from './cli-flags.ts';
 
 const DATA_DIR = resolve(process.cwd(), '../../data');
 const DB_PATH = `${DATA_DIR}/hv-rag.db`;
@@ -144,7 +145,7 @@ async function main() {
       file: { type: 'string' },
       all: { type: 'boolean', default: false },
       force: { type: 'boolean', default: false },
-      model: { type: 'string', default: 'summarizer-bulk-14b' },
+      'gen-model': GenModelFlagOption,
       concurrency: { type: 'string', default: '16' },
     },
     strict: true,
@@ -157,8 +158,7 @@ async function main() {
   }
 
   const db = createDb(DB_PATH);
-  // @ts-ignore - The type for model name might be strict, assuming string is compatible or casted
-  const model = getGenModel(values.model as any);
+  const model = getGenModel(parseGenModelFlag(values['gen-model']));
 
   // Get videos to process
   let videosToProcess: Video[];

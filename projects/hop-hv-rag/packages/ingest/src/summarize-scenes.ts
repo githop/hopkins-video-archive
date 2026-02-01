@@ -9,7 +9,7 @@ import {
   type Video,
   type Transcript,
 } from '@hop-hv-rag/db';
-import { getGenModel, type GenerationModelName } from '@hop-hv-rag/ai';
+import { getGenModel } from '@hop-hv-rag/ai';
 import {
   ParticipantService,
   LocationService,
@@ -22,6 +22,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { TUI } from './tui.ts';
+import { GenModelFlagOption, parseGenModelFlag } from './cli-flags.ts';
 
 /**
  * Configuration & Constants
@@ -544,7 +545,7 @@ async function main() {
       file: { type: 'string' },
       all: { type: 'boolean', default: false },
       force: { type: 'boolean', default: false },
-      model: { type: 'string', default: 'summarizer-bulk-14b' },
+      'gen-model': GenModelFlagOption,
       concurrency: { type: 'string', default: '12' },
       verbose: { type: 'boolean', default: false },
     },
@@ -759,7 +760,7 @@ async function main() {
   // Initialize archivist
   const archivist = new VideoArchivist(
     db,
-    getGenModel(values.model as GenerationModelName),
+    getGenModel(parseGenModelFlag(values['gen-model'])),
     participantService,
     locationService,
     activityService,
