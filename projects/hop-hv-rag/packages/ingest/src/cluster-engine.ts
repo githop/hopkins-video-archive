@@ -47,7 +47,7 @@ export async function runClustering<
     concurrency = 16,
     categoryFallback,
     validCategories,
-    model: modelName = 'summarizer-bulk-14b',
+    model: modelName,
   } = config;
 
   const db = createDb(dbPath);

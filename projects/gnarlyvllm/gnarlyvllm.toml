@@ -89,7 +89,7 @@ port = 8008
 image = "gnarlyvllm/glm-compat:latest"
 
 [models.summarizer-bulk-glm-flash.defaults]
-gpu_memory_utilization = 0.85
+gpu_memory_utilization = 0.9
 max_model_len = 8192
 reasoning_parser = "glm45"
 max_num_seqs = 16

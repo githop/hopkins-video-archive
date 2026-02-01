@@ -167,6 +167,9 @@ export async function serveCommand(
 
     const litellmReady = await waitForLiteLLMReady(
       config.settings.litellm_port,
+      60000,
+      1000,
+      'litellm',
     );
     if (!litellmReady) {
       console.error('LiteLLM failed to start within timeout.');

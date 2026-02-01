@@ -16,13 +16,21 @@ import {
   ActivityService,
   logger,
 } from '@hop-hv-rag/core';
-import { generateText, type LanguageModel } from 'ai';
-import { z } from 'zod';
+import {
+  generateText,
+  Output,
+  NoObjectGeneratedError,
+  type LanguageModel,
+} from 'ai';
 import { eq, inArray } from 'drizzle-orm';
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { TUI } from './tui.ts';
 import { GenModelFlagOption, parseGenModelFlag } from './cli-flags.ts';
+import {
+  SCENE_SUMMARIZATION_PROMPT,
+  SceneSummarizationSchema,
+} from './prompts.ts';
 
 /**
  * Configuration & Constants
@@ -34,20 +42,15 @@ const LOCATION_REGISTRY_PATH = `${DATA_DIR}/location-registry.json`;
 const ACTIVITY_REGISTRY_PATH = `${DATA_DIR}/activity-registry.json`;
 const CHUNK_DURATION_SECONDS = 180;
 
-/**
- * Schema for AI Scene Extraction
- */
-const SceneSchema = z.object({
-  title: z.string().optional(),
-  scene_title: z.string().optional(),
-  summary: z.string().optional(),
-  narrative_summary: z.string().optional(),
-  participants: z.array(z.string()).default([]),
-  locations: z.array(z.string()).default([]),
-  activities: z.array(z.string()).default([]),
-});
-
-type RawAiOutput = z.infer<typeof SceneSchema>;
+type RawAiOutput = {
+  title?: string;
+  scene_title?: string;
+  summary?: string;
+  narrative_summary?: string;
+  participants?: string[];
+  locations?: string[];
+  activities?: string[];
+};
 
 interface SceneData {
   title: string;
@@ -296,29 +299,6 @@ class VideoArchivist {
   }
 
   /**
-   * Retry helper with exponential backoff
-   */
-  private async withRetry<T>(
-    fn: () => Promise<T>,
-    maxRetries = 3,
-    baseDelay = 1000,
-  ): Promise<T> {
-    let lastError: Error | undefined;
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        return await fn();
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        if (attempt < maxRetries - 1) {
-          const delay = baseDelay * Math.pow(2, attempt);
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        }
-      }
-    }
-    throw lastError;
-  }
-
-  /**
    * Individual worker unit: AI request + Database save
    */
   private async summarizeChunk(
@@ -330,22 +310,13 @@ class VideoArchivist {
     const { startTime, endTime, text, rawSegments } = chunk;
 
     try {
-      const object = await this.withRetry(async () => {
-        const { text: resultText } = await generateText({
-          model: this.model,
-          system: this.getSystemPrompt(),
-          prompt: `Transcript for the current 3-minute segment:\n\n${text}`,
-        });
-
-        const jsonMatch = resultText.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-          throw new Error(
-            `No JSON found in AI response: ${resultText.slice(0, 200)}`,
-          );
-        }
-
-        const rawObject = JSON.parse(jsonMatch[0]);
-        return SceneSchema.parse(rawObject);
+      const { output: object } = await generateText({
+        model: this.model,
+        system: SCENE_SUMMARIZATION_PROMPT,
+        output: Output.object({
+          schema: SceneSummarizationSchema,
+        }),
+        prompt: `Transcript for the current 3-minute segment:\n\n${text}`,
       });
 
       const data = this.normalizeAiOutput(object);
@@ -466,6 +437,17 @@ class VideoArchivist {
 
       return data.title;
     } catch (error: unknown) {
+      if (NoObjectGeneratedError.isInstance(error)) {
+        logger.warn(
+          {
+            startTime: startTime.toFixed(0),
+            text: error.text,
+            response: error.response,
+          },
+          'No object generated - model did not return valid JSON',
+        );
+        return null;
+      }
       const message = error instanceof Error ? error.message : String(error);
       logger.error(
         { startTime: startTime.toFixed(0), error: message },
@@ -485,54 +467,6 @@ class VideoArchivist {
       activities: output.activities ?? [],
     };
   }
-
-  private getSystemPrompt(): string {
-    return `You are an expert film archivist cataloging the Hopkins family video archive.
-Analyze the home video transcript segment and provide a high-quality archival summary.
-
-OUTPUT FORMAT (JSON object with these keys):
-1. title: Short, descriptive title for this segment (5-10 words)
-2. summary: Concise paragraph (3-4 sentences) describing the action. Start directly with events - avoid "The video captures..." or "This shows..."
-3. participants: Array of people mentioned, speaking, or visible
-4. locations: Array of specific places, rooms, or settings
-5. activities: Array of activities, events, or occasions depicted
-
-HOPKINS FAMILY NAME MAPPINGS (use these canonical forms):
-- Gregory, Greggie, Greggy → "Greg"
-- Jeffrey, Jeff → "Geoff"  
-- Daniel, Dan → "Danny"
-- Daddy, Dad, Father → "Dad"
-- Mommy, Mom, Mama, Mother → "Mom"
-- Grandma, Grandmother, Nana → "Grandma"
-- Grandpa, Grandfather, Papa → "Grandpa"
-- Keep specific names with titles: "Uncle Matt", "Aunt Lisa", "Aunt Teresa"
-
-PARTICIPANT EXTRACTION RULES:
-- Use actual names when spoken or identifiable: "Greg", "Mom", "Uncle Matt"
-- Use specific roles with names when possible: "Coach Johnson", "Father Mike"
-- For unidentified speakers, use descriptive roles: "Narrator", "Announcer", "Coach"
-- NEVER use generic placeholders: "A person", "Someone", "A man", "A woman", "Another child"
-- If you cannot identify someone, omit them rather than using a generic label
-
-LOCATION EXTRACTION RULES:
-- Use specific place names: "Lake Cumberland", "Yellowstone", "76 Falls"
-- Use clear room/setting names: "Kitchen", "Living Room", "Backyard", "Church"
-- For family homes use: "Grandma's House", "Aunt Teresa's House", "Home"
-- NEVER use: "Unknown", "Unknown location", "Unspecified", "A room"
-- If location is unclear, omit it rather than guessing
-
-ACTIVITY EXTRACTION RULES:
-- Sports: "Football", "Tennis", "Wrestling", "Baseball", "Golf", "Skiing", "Basketball", "Soccer"
-- Recreation: "Fishing", "Swimming", "Hiking", "Boating", "Hunting", "Camping", "Biking"
-- Holidays: "Christmas", "Easter", "Thanksgiving", "Halloween", "Fourth of July"
-- Milestones: "Birthday", "Baptism", "Wedding", "Graduation", "Funeral", "Anniversary"
-- Use noun forms: "Fishing" not "went fishing", "Christmas" not "Christmas morning"
-- Be specific when context is clear: "Football Practice" vs just "Football"
-- NEVER use generic verbs: "playing", "talking", "walking", "sitting", "watching"
-- If no clear activity/event is depicted, return empty array
-
-CRITICAL: Respond ONLY with a valid JSON object. No additional text.`;
-  }
 }
 
 /**
@@ -546,7 +480,7 @@ async function main() {
       all: { type: 'boolean', default: false },
       force: { type: 'boolean', default: false },
       'gen-model': GenModelFlagOption,
-      concurrency: { type: 'string', default: '12' },
+      concurrency: { type: 'string', default: '16' },
       verbose: { type: 'boolean', default: false },
     },
     strict: true,
