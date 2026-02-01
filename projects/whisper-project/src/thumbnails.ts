@@ -29,17 +29,18 @@ function getThumbnailTimestamp(startTime: number, endTime: number): number {
 
 /**
  * Generate thumbnail output path and directory structure
+ * Filename uses scene start time for stable, regenerable naming
  */
 function getThumbnailPath(
   videoFilename: string,
-  sceneId: number,
-  timestamp: number
+  sceneStartTime: number,
+  timestamp: number,
 ): { dir: string; fullPath: string } {
   const videoBase = basename(videoFilename, ".m4v").replace(".mp4", "");
-  const timestampStr = String(Math.floor(timestamp)).padStart(5, "0");
+  const timestampStr = String(Math.floor(sceneStartTime)).padStart(5, "0");
 
   const dir = join(CONFIG.THUMBNAILS_DIR, videoBase);
-  const filename = `${sceneId}_${timestampStr}.jpg`;
+  const filename = `${timestampStr}.jpg`;
   const fullPath = join(dir, filename);
 
   return { dir, fullPath };
@@ -49,7 +50,9 @@ function getThumbnailPath(
  * Query all scenes that need thumbnails
  */
 function getScenes(db: Database): SceneRow[] {
-  return db.query(`
+  return db
+    .query(
+      `
     SELECT
       s.id as scene_id,
       s.video_id,
@@ -59,7 +62,9 @@ function getScenes(db: Database): SceneRow[] {
     FROM scenes s
     JOIN videos v ON s.video_id = v.id
     ORDER BY v.filename, s.start_time
-  `).all() as SceneRow[];
+  `,
+    )
+    .all() as SceneRow[];
 }
 
 /**
@@ -138,7 +143,7 @@ export async function generateThumbnails(options: {
         );
         const { dir, fullPath } = getThumbnailPath(
           scene.video_filename,
-          scene.scene_id,
+          scene.start_time,
           timestamp,
         );
 
@@ -150,7 +155,9 @@ export async function generateThumbnails(options: {
         }
 
         if (dryRun) {
-          Logger.info(`[DRY RUN] Would create: ${fullPath} at ${timestamp.toFixed(1)}s`);
+          Logger.info(
+            `[DRY RUN] Would create: ${fullPath} at ${timestamp.toFixed(1)}s`,
+          );
           processed++;
           return;
         }
@@ -227,11 +234,11 @@ class Semaphore {
 if (import.meta.main) {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
-  const videoFilter = args
-    .find((a) => a.startsWith("--video="))
-    ?.split("=")[1];
+  const videoFilter = args.find((a) => a.startsWith("--video="))?.split("=")[1];
   const concurrencyArg = args.find((a) => a.startsWith("--concurrency="));
-  const concurrency = concurrencyArg ? parseInt(concurrencyArg.split("=")[1]) : 4;
+  const concurrency = concurrencyArg
+    ? parseInt(concurrencyArg.split("=")[1] ?? "4")
+    : 4;
 
   // Validate concurrency
   if (isNaN(concurrency) || concurrency < 1 || concurrency > 16) {

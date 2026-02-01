@@ -272,7 +272,7 @@ export class FamilyArchivist {
       })
       .join('\n\n');
 
-    return sceneContext;
+    return context + sceneContext;
   }
 
   /**

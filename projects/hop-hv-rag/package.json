@@ -10,7 +10,7 @@
     "ingest:seed": "bun --filter @hop-hv-rag/ingest seed",
     "ingest:summarize": "bun --cwd packages/ingest summarize",
     "ingest:temporal": "bun --filter @hop-hv-rag/ingest ingest:temporal",
-    "ingest:global": "bun --filter @hop-hv-rag/in",
+    "ingest:global": "bun --filter @hop-hv-rag/ingest ingest:global",
     "ingest:init-db": "bun --filter @hop-hv-rag/ingest init-db",
     "ingest:init-vec": "bun --filter @hop-hv-rag/ingest init-vec",
     "ingest:embed": "bun --filter @hop-hv-rag/ingest embed",

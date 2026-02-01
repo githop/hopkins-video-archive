@@ -18,7 +18,7 @@ import {
 } from '@hop-hv-rag/core';
 import { generateText, type LanguageModel } from 'ai';
 import { z } from 'zod';
-import { eq, sql, inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { TUI } from './tui.ts';
@@ -65,6 +65,13 @@ interface Chunk {
   rawSegments: Transcript[];
 }
 
+interface ChunkJob {
+  video: Video;
+  chunk: Chunk;
+  chunkIndex: number;
+  totalChunks: number;
+}
+
 interface ProgressCallbacks {
   onVideoStart: (video: Video, totalChunks: number) => void;
   onChunkProgress: (
@@ -80,55 +87,48 @@ interface ProgressCallbacks {
 }
 
 /**
- * VideoArchivist: Handles the heavy lifting of transforming raw transcripts
- * into semantic, summarized scenes.
+ * JobPlanner: Pre-calculates all work upfront with idempotency filtering.
+ * Determines which chunks need processing across all videos before execution.
  */
-class VideoArchivist {
+class JobPlanner {
   constructor(
     private db: ReturnType<typeof createDb>,
-    private model: LanguageModel,
-    private participantService: ParticipantService,
-    private locationService: LocationService,
-    private activityService: ActivityService,
-    private progressCallbacks?: ProgressCallbacks,
+    private chunkDurationSeconds: number,
   ) {}
 
-  /**
-   * Main entry point for processing a video
-   */
-  async processVideo(
-    video: Video,
-    options: { force?: boolean; concurrency: number },
-  ): Promise<{ scenesCreated: number; error?: string; warning?: string }> {
-    logger.info(
-      { videoId: video.id, filename: video.filename },
-      '🎥 Processing video',
-    );
+  async planJobs(
+    videos: Video[],
+    options: { force?: boolean },
+  ): Promise<{
+    jobs: ChunkJob[];
+    videosToProcess: Video[];
+    videosSkipped: Video[];
+  }> {
+    const jobs: ChunkJob[] = [];
+    const videosToProcess: Video[] = [];
+    const videosSkipped: Video[] = [];
 
-    if (options.force) {
-      // Find all scene IDs for this video to clean up junction tables
-      const scenesToDelete = await this.db
-        .select({ id: scenes.id })
-        .from(scenes)
-        .where(eq(scenes.videoId, video.id));
+    for (const video of videos) {
+      const videoJobs = await this.planVideoJobs(video, options);
 
-      const sceneIds = scenesToDelete.map((s) => s.id);
-
-      if (sceneIds.length > 0) {
-        // Delete from junction tables first
-        await this.db
-          .delete(sceneToPeople)
-          .where(inArray(sceneToPeople.sceneId, sceneIds));
-        await this.db
-          .delete(sceneToLocations)
-          .where(inArray(sceneToLocations.sceneId, sceneIds));
-        await this.db
-          .delete(sceneToActivities)
-          .where(inArray(sceneToActivities.sceneId, sceneIds));
-
-        // Finally delete the scenes
-        await this.db.delete(scenes).where(eq(scenes.videoId, video.id));
+      if (videoJobs.length === 0 && !options.force) {
+        videosSkipped.push(video);
+      } else {
+        videosToProcess.push(video);
+        jobs.push(...videoJobs);
       }
+    }
+
+    return { jobs, videosToProcess, videosSkipped };
+  }
+
+  private async planVideoJobs(
+    video: Video,
+    options: { force?: boolean },
+  ): Promise<ChunkJob[]> {
+    // Handle force mode: delete existing scenes first
+    if (options.force) {
+      await this.deleteVideoScenes(video.id);
     }
 
     const segments = await this.db
@@ -138,25 +138,18 @@ class VideoArchivist {
       .orderBy(transcripts.startTime);
 
     if (segments.length === 0) {
-      const warning = 'No transcripts found. Skipping.';
-      if (this.progressCallbacks) {
-        this.progressCallbacks.onVideoWarning(video, warning);
-      } else {
-        logger.warn({ videoId: video.id }, `⚠️ ${warning}`);
-      }
-      return { scenesCreated: 0, warning };
+      return [];
     }
 
     const allChunks = this.createChunks(segments);
 
-    // Idempotency check: Filter out chunks that have already been processed
+    // Idempotency check: filter out already-processed chunks
     const existingScenes = await this.db
       .select({ startTime: scenes.startTime })
       .from(scenes)
       .where(eq(scenes.videoId, video.id));
 
-    const chunks = allChunks.filter((chunk) => {
-      // Check if any existing scene falls within this chunk's window
+    const pendingChunks = allChunks.filter((chunk) => {
       const isProcessed = existingScenes.some(
         (scene) =>
           scene.startTime >= chunk.windowStart &&
@@ -165,57 +158,94 @@ class VideoArchivist {
       return !isProcessed;
     });
 
-    if (chunks.length === 0) {
-      const warning = 'Video fully processed';
-      if (this.progressCallbacks) {
-        this.progressCallbacks.onVideoComplete(video, allChunks.length);
-      } else {
-        logger.info(
-          { videoId: video.id, chunks: allChunks.length },
-          '✅ Video fully processed',
-        );
-      }
-      return { scenesCreated: 0, warning };
-    }
-
-    if (chunks.length < allChunks.length) {
-      logger.info(
-        {
-          videoId: video.id,
-          chunksToProcess: chunks.length,
-          skipped: allChunks.length - chunks.length,
-        },
-        `ℹ️ Processing ${chunks.length} missing chunks (${allChunks.length - chunks.length} skipped)...`,
-      );
-    } else {
-      logger.info(
-        {
-          videoId: video.id,
-          chunks: chunks.length,
-          concurrency: options.concurrency,
-        },
-        `🚀 Processing ${chunks.length} chunks (Concurrency: ${options.concurrency})...`,
-      );
-    }
-
-    if (this.progressCallbacks) {
-      this.progressCallbacks.onVideoStart(video, chunks.length);
-    }
-
-    const scenesCreated = await this.processChunksInParallel(
+    return pendingChunks.map((chunk, index) => ({
       video,
-      chunks,
-      options.concurrency,
-    );
-    await this.aggregateVideoMetadata(video.id);
+      chunk,
+      chunkIndex: index,
+      totalChunks: allChunks.length,
+    }));
+  }
 
-    return { scenesCreated };
+  private async deleteVideoScenes(videoId: number): Promise<void> {
+    const scenesToDelete = await this.db
+      .select({ id: scenes.id })
+      .from(scenes)
+      .where(eq(scenes.videoId, videoId));
+
+    const sceneIds = scenesToDelete.map((s) => s.id);
+
+    if (sceneIds.length > 0) {
+      await this.db
+        .delete(sceneToPeople)
+        .where(inArray(sceneToPeople.sceneId, sceneIds));
+      await this.db
+        .delete(sceneToLocations)
+        .where(inArray(sceneToLocations.sceneId, sceneIds));
+      await this.db
+        .delete(sceneToActivities)
+        .where(inArray(sceneToActivities.sceneId, sceneIds));
+      await this.db.delete(scenes).where(eq(scenes.videoId, videoId));
+    }
+  }
+
+  private createChunks(segments: Transcript[]): Chunk[] {
+    const chunks: Chunk[] = [];
+    const lastSegment = segments[segments.length - 1];
+    const maxTime = lastSegment.endTime;
+
+    for (let start = 0; start < maxTime; start += this.chunkDurationSeconds) {
+      const end = start + this.chunkDurationSeconds;
+      const chunkSegments = segments.filter(
+        (s) => s.startTime >= start && s.startTime < end,
+      );
+
+      if (chunkSegments.length > 0) {
+        chunks.push({
+          windowStart: start,
+          windowEnd: end,
+          startTime: chunkSegments[0].startTime,
+          endTime: chunkSegments[chunkSegments.length - 1].endTime,
+          text: chunkSegments
+            .map((s) => `[${s.startTime.toFixed(2)}s] ${s.text}`)
+            .join('\n'),
+          rawSegments: chunkSegments,
+        });
+      }
+    }
+    return chunks;
+  }
+}
+
+/**
+ * VideoArchivist: Processes individual chunks into scenes.
+ * With interleaved execution, each chunk is processed independently.
+ */
+class VideoArchivist {
+  constructor(
+    private db: ReturnType<typeof createDb>,
+    private model: LanguageModel,
+    private participantService: ParticipantService,
+    private locationService: LocationService,
+    private activityService: ActivityService,
+  ) {}
+
+  /**
+   * Process a single chunk job (used in interleaved execution)
+   */
+  async processChunkJob(job: ChunkJob): Promise<string | null> {
+    return this.summarizeChunk(
+      job.video,
+      job.chunk,
+      job.chunkIndex + 1,
+      job.totalChunks,
+    );
   }
 
   /**
    * Aggregates participants, locations, and activities from all scenes back to the video record.
+   * Called after all chunks for a video are complete.
    */
-  private async aggregateVideoMetadata(videoId: number) {
+  async aggregateVideoMetadata(videoId: number): Promise<void> {
     const videoScenes = await this.db
       .select({
         participants: scenes.participants,
@@ -262,79 +292,6 @@ class VideoArchivist {
       },
       '✨ Updated video metadata',
     );
-  }
-
-  /**
-   * Logic for dividing the transcript into fixed-time chunks
-   */
-  private createChunks(segments: Transcript[]): Chunk[] {
-    const chunks: Chunk[] = [];
-    const lastSegment = segments[segments.length - 1];
-    const maxTime = lastSegment.endTime;
-
-    for (let start = 0; start < maxTime; start += CHUNK_DURATION_SECONDS) {
-      const end = start + CHUNK_DURATION_SECONDS;
-      const chunkSegments = segments.filter(
-        (s) => s.startTime >= start && s.startTime < end,
-      );
-
-      if (chunkSegments.length > 0) {
-        chunks.push({
-          windowStart: start,
-          windowEnd: end,
-          startTime: chunkSegments[0].startTime,
-          endTime: chunkSegments[chunkSegments.length - 1].endTime,
-          text: chunkSegments
-            .map((s) => `[${s.startTime.toFixed(2)}s] ${s.text}`)
-            .join('\n'),
-          rawSegments: chunkSegments,
-        });
-      }
-    }
-    return chunks;
-  }
-
-  /**
-   * Orchestrates parallel execution of AI requests
-   */
-  private async processChunksInParallel(
-    video: Video,
-    chunks: Chunk[],
-    limit: number,
-  ): Promise<number> {
-    const activePromises = new Set<Promise<string | null>>();
-    let completedCount = 0;
-    const totalChunks = chunks.length;
-
-    for (const [index, chunk] of chunks.entries()) {
-      const chunkNum = index + 1;
-      const promise = this.summarizeChunk(video, chunk, chunkNum, totalChunks);
-      activePromises.add(promise);
-
-      promise
-        .then((title) => {
-          if (this.progressCallbacks) {
-            this.progressCallbacks.onChunkProgress(
-              video,
-              chunkNum,
-              totalChunks,
-              title,
-            );
-            if (title) {
-              this.progressCallbacks.onSceneCreated(video, title);
-            }
-          }
-          completedCount++;
-        })
-        .finally(() => activePromises.delete(promise));
-
-      if (activePromises.size >= limit) {
-        await Promise.race(activePromises);
-      }
-    }
-
-    await Promise.all(activePromises);
-    return completedCount;
   }
 
   /**
@@ -420,6 +377,24 @@ class VideoArchivist {
           activities: JSON.stringify(canonicalActivities),
         })
         .returning();
+
+      // Update scene with thumbnail path after we have the scene ID
+      // Path format: /{videoFolder}/{startTime}.jpg (scene-agnostic for regeneration safety)
+      if (sceneResult) {
+        const videoFolder = video.filename.replace(/\.[^/.]+$/, '');
+        const timestampPadded = Math.floor(startTime)
+          .toString()
+          .padStart(5, '0');
+        const thumbnailPath = `/${videoFolder}/${timestampPadded}.jpg`;
+
+        await this.db
+          .update(scenes)
+          .set({ thumbnailPath })
+          .where(eq(scenes.id, sceneResult.id));
+
+        // Update the sceneResult object with the new thumbnailPath
+        sceneResult.thumbnailPath = thumbnailPath;
+      }
 
       // Sync to junction tables
       if (sceneResult) {
@@ -570,8 +545,7 @@ async function main() {
       all: { type: 'boolean', default: false },
       force: { type: 'boolean', default: false },
       model: { type: 'string', default: 'summarizer-bulk-14b' },
-      concurrency: { type: 'string', default: '6' },
-      'video-concurrency': { type: 'string', default: '2' },
+      concurrency: { type: 'string', default: '12' },
       verbose: { type: 'boolean', default: false },
     },
     strict: true,
@@ -588,8 +562,7 @@ async function main() {
     activityService.load(),
   ]);
 
-  const concurrency = parseInt(values.concurrency!);
-  const videoConcurrency = parseInt(values['video-concurrency']!);
+  const maxConcurrency = parseInt(values.concurrency!);
   const isVerbose = values.verbose!;
 
   // Determine target videos
@@ -608,32 +581,47 @@ async function main() {
     process.exit(1);
   }
 
-  // Calculate durations for LPT scheduling
-  if (targetVideos.length > 0) {
-    const videoIds = targetVideos.map((v) => v.id);
-    const durations = await db
-      .select({
-        videoId: transcripts.videoId,
-        maxTime: sql<number>`MAX(${transcripts.endTime})`,
-      })
-      .from(transcripts)
-      .where(inArray(transcripts.videoId, videoIds))
-      .groupBy(transcripts.videoId);
+  // Phase 1: Planning - Calculate all work upfront
+  logger.info(
+    { videoCount: targetVideos.length },
+    '📋 Planning phase: Calculating chunks...',
+  );
 
-    const durationMap = new Map(durations.map((d) => [d.videoId, d.maxTime]));
+  const planner = new JobPlanner(db, CHUNK_DURATION_SECONDS);
+  const { jobs, videosToProcess, videosSkipped } = await planner.planJobs(
+    targetVideos,
+    { force: values.force },
+  );
 
-    // Sort longest first
-    targetVideos.sort((a, b) => {
-      const durA = durationMap.get(a.id) ?? 0;
-      const durB = durationMap.get(b.id) ?? 0;
-      return durB - durA;
-    });
+  if (videosSkipped.length > 0) {
+    for (const video of videosSkipped) {
+      logger.info(
+        { filename: video.filename },
+        '✅ Video fully processed (skipping)',
+      );
+    }
   }
+
+  if (jobs.length === 0) {
+    logger.info('🏁 No work to do - all videos already processed.');
+    process.exit(0);
+  }
+
+  logger.info(
+    {
+      totalJobs: jobs.length,
+      videosToProcess: videosToProcess.length,
+      videosSkipped: videosSkipped.length,
+    },
+    `🚀 Interleaved execution: ${jobs.length} chunks across ${videosToProcess.length} videos`,
+  );
 
   // Stats tracking for final summary
   const stats = {
-    totalVideos: targetVideos.length,
+    totalVideos: videosToProcess.length,
     completedVideos: 0,
+    totalChunks: jobs.length,
+    completedChunks: 0,
     totalScenes: 0,
     errors: [] as Array<{ videoId: number; filename: string; error: string }>,
     warnings: [] as Array<{
@@ -643,15 +631,37 @@ async function main() {
     }>,
   };
 
+  // Per-video progress tracking
+  const videoProgress = new Map<
+    number,
+    {
+      video: Video;
+      totalChunks: number;
+      completedChunks: number;
+      scenesCreated: number;
+    }
+  >();
+
+  for (const video of videosToProcess) {
+    const videoJobs = jobs.filter((j) => j.video.id === video.id);
+    videoProgress.set(video.id, {
+      video,
+      totalChunks: videoJobs[0]?.totalChunks ?? 0,
+      completedChunks: 0,
+      scenesCreated: 0,
+    });
+  }
+
   // Setup TUI (if not verbose)
   const tui = isVerbose ? null : new TUI();
 
   if (!isVerbose) {
-    tui!.start(targetVideos.length);
+    logger.level = 'silent';
+    tui!.start(stats.totalChunks, stats.totalVideos);
   } else {
     logger.info(
-      { videoCount: targetVideos.length, videoConcurrency },
-      '🎬 Archivist starting. Processing videos with LPT scheduling...',
+      { jobs: jobs.length, maxConcurrency },
+      '🎬 Starting interleaved processing...',
     );
   }
 
@@ -661,12 +671,13 @@ async function main() {
     if (!shuttingDown) {
       shuttingDown = true;
       if (!isVerbose && tui) {
+        tui.showShutdownMessage('Finishing active chunks before exit...');
         tui.addActivity(
           'info',
-          '⚠️ Finishing active videos before shutdown...',
+          '⚠️ SIGINT received - completing active work...',
         );
       } else {
-        logger.info('⚠️ Finishing active videos before shutdown...');
+        logger.info('⚠️ Finishing active chunks before shutdown...');
       }
     }
   });
@@ -697,16 +708,26 @@ async function main() {
     },
     onSceneCreated: (video, title) => {
       stats.totalScenes++;
+      const progress = videoProgress.get(video.id)!;
+      progress.scenesCreated++;
       if (!isVerbose && tui) {
         tui.addActivity('success', `"${title}" (${video.filename})`);
-        tui.updateProgress(stats.completedVideos, stats.totalScenes);
+        tui.updateProgress(
+          stats.completedChunks,
+          stats.completedVideos,
+          stats.totalScenes,
+        );
       }
     },
     onVideoComplete: (video, sceneCount) => {
       stats.completedVideos++;
       if (!isVerbose && tui) {
         tui.removeActiveJob(video.id);
-        tui.updateProgress(stats.completedVideos, stats.totalScenes);
+        tui.updateProgress(
+          stats.completedChunks,
+          stats.completedVideos,
+          stats.totalScenes,
+        );
       } else {
         logger.info(
           { videoId: video.id, filename: video.filename, scenes: sceneCount },
@@ -735,74 +756,79 @@ async function main() {
     },
   };
 
+  // Initialize archivist
   const archivist = new VideoArchivist(
     db,
     getGenModel(values.model as GenerationModelName),
     participantService,
     locationService,
     activityService,
-    isVerbose ? undefined : progressCallbacks,
   );
 
-  // Process videos with concurrency control
+  // Phase 2: Interleaved Execution
+  // Fire all jobs through a flat concurrency pool
   const activePromises = new Set<Promise<void>>();
-  const pendingVideos = [...targetVideos];
 
-  while (pendingVideos.length > 0 || activePromises.size > 0) {
-    // Check if shutting down
-    if (shuttingDown && activePromises.size > 0) {
-      // Wait for active videos to complete
-      await Promise.all(activePromises);
+  for (const job of jobs) {
+    // Check for shutdown
+    if (shuttingDown) {
       break;
     }
 
-    // Start new videos if we have capacity
-    while (
-      !shuttingDown &&
-      pendingVideos.length > 0 &&
-      activePromises.size < videoConcurrency
-    ) {
-      const video = pendingVideos.shift()!;
-
-      const promise = archivist
-        .processVideo(video, {
-          force: values.force,
-          concurrency,
-        })
-        .then((result) => {
-          if (result.warning) {
-            progressCallbacks.onVideoWarning(video, result.warning);
-          }
-          if (result.error) {
-            progressCallbacks.onVideoError(video, result.error);
-          } else {
-            progressCallbacks.onVideoComplete(video, result.scenesCreated);
-          }
-        })
-        .catch((error) => {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          progressCallbacks.onVideoError(video, message);
-        });
-
-      activePromises.add(promise);
-      promise.finally(() => activePromises.delete(promise));
-    }
-
-    // Wait for at least one to complete if we're at capacity
-    if (
-      activePromises.size >= videoConcurrency ||
-      (shuttingDown && activePromises.size > 0)
-    ) {
+    // Wait if at max concurrency
+    if (activePromises.size >= maxConcurrency) {
       await Promise.race(activePromises);
     }
+
+    // Fire the job
+    const progress = videoProgress.get(job.video.id)!;
+
+    if (progress.completedChunks === 0) {
+      progressCallbacks.onVideoStart(job.video, progress.totalChunks);
+    }
+
+    const promise = archivist
+      .processChunkJob(job)
+      .then(async (title) => {
+        // Update global and per-video progress
+        stats.completedChunks++;
+        progress.completedChunks++;
+        progressCallbacks.onChunkProgress(
+          job.video,
+          progress.completedChunks,
+          progress.totalChunks,
+          title,
+        );
+        if (title) {
+          progressCallbacks.onSceneCreated(job.video, title);
+        }
+
+        // Check if video is complete
+        if (progress.completedChunks >= progress.totalChunks) {
+          // Aggregate metadata
+          await archivist.aggregateVideoMetadata(job.video.id);
+          progressCallbacks.onVideoComplete(job.video, progress.scenesCreated);
+        }
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        progressCallbacks.onVideoError(job.video, message);
+      });
+
+    activePromises.add(promise);
+    promise.finally(() => activePromises.delete(promise));
   }
+
+  // Wait for all remaining jobs
+  await Promise.all(activePromises);
 
   // Finalize
   if (!isVerbose && tui) {
     tui.finalize({
       totalVideos: stats.totalVideos,
       completedVideos: stats.completedVideos,
+      totalChunks: stats.totalChunks,
+      completedChunks: stats.completedChunks,
       totalScenes: stats.totalScenes,
       errors: stats.errors,
       warnings: stats.warnings,
@@ -814,6 +840,9 @@ async function main() {
     console.log(`\n┌${'─'.repeat(78)}┐`);
     console.log(`│ 🏁 COMPLETE${' '.repeat(66)}│`);
     console.log(`├${'─'.repeat(78)}┤`);
+    console.log(
+      `│ Total Chunks: ${stats.completedChunks}/${stats.totalChunks}${' '.repeat(60 - stats.completedChunks.toString().length - stats.totalChunks.toString().length)}│`,
+    );
     console.log(
       `│ Total Videos: ${stats.completedVideos}/${stats.totalVideos}${' '.repeat(60 - stats.completedVideos.toString().length - stats.totalVideos.toString().length)}│`,
     );

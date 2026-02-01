@@ -6,6 +6,7 @@ interface ActiveJob {
   chunkNum: number;
   totalChunks: number;
   currentTitle: string | null;
+  lastUpdated?: number; // timestamp for sorting by recency (set internally by TUI)
 }
 
 interface ActivityLine {
@@ -17,6 +18,8 @@ interface ActivityLine {
 interface SummaryStats {
   totalVideos: number;
   completedVideos: number;
+  totalChunks: number;
+  completedChunks: number;
   totalScenes: number;
   errors: Array<{ videoId: number; filename: string; error: string }>;
   warnings: Array<{ videoId: number; filename: string; message: string }>;
@@ -25,18 +28,24 @@ interface SummaryStats {
 export class TUI extends EventEmitter {
   private activeJobs = new Map<number, ActiveJob>();
   private recentLines: ActivityLine[] = [];
-  private totalVideos = 0;
+  private totalChunks = 0;
+  private completedChunks = 0;
   private completedVideos = 0;
+  private totalVideos = 0;
   private totalScenes = 0;
   private readonly maxLines = 5;
   private readonly width = 80;
+  private readonly maxActiveDisplay = 4; // Show top 4 most recent jobs
   private isActive = false;
   private errorDisplayUntil = 0;
   private errorMessage: string | null = null;
+  private shutdownMessage: string | null = null;
 
-  start(totalVideos: number): void {
+  start(totalChunks: number, totalVideos: number): void {
+    this.totalChunks = totalChunks;
     this.totalVideos = totalVideos;
     this.isActive = true;
+    this.enterAltScreen();
     this.hideCursor();
     this.clearScreen();
     this.render();
@@ -45,15 +54,23 @@ export class TUI extends EventEmitter {
   stop(): void {
     this.isActive = false;
     this.showCursor();
+    this.exitAltScreen();
   }
 
-  updateProgress(completedVideos: number, totalScenes: number): void {
+  updateProgress(
+    completedChunks: number,
+    completedVideos: number,
+    totalScenes: number,
+  ): void {
+    this.completedChunks = completedChunks;
     this.completedVideos = completedVideos;
     this.totalScenes = totalScenes;
     if (this.isActive) this.render();
   }
 
   setActiveJob(job: ActiveJob): void {
+    // Add/update timestamp for recency tracking
+    job.lastUpdated = Date.now();
     this.activeJobs.set(job.videoId, job);
     if (this.isActive) this.render();
   }
@@ -77,6 +94,11 @@ export class TUI extends EventEmitter {
     if (this.isActive) this.render();
   }
 
+  showShutdownMessage(message: string): void {
+    this.shutdownMessage = message;
+    if (this.isActive) this.render();
+  }
+
   private render(): void {
     const now = Date.now();
     const showError = this.errorMessage && now < this.errorDisplayUntil;
@@ -84,39 +106,69 @@ export class TUI extends EventEmitter {
     // Build output
     let output = '';
 
-    // Header with progress
+    // Header with chunk-based progress
     const percent =
-      this.totalVideos > 0
-        ? Math.round((this.completedVideos / this.totalVideos) * 100)
+      this.totalChunks > 0
+        ? Math.round((this.completedChunks / this.totalChunks) * 100)
         : 0;
     const barWidth = 30;
     const filled = Math.round((percent / 100) * barWidth);
     const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
 
     output += `┌${'─'.repeat(this.width - 2)}┐\n`;
-    output += `│ 🎬 Video Archivist${' '.repeat(14)}[${bar}] ${percent.toString().padStart(3)}% │\n`;
-    output += `│${' '.repeat(27)}${this.completedVideos}/${this.totalVideos} videos • ${this.totalScenes} scenes${' '.repeat(Math.max(0, this.width - 43 - this.totalVideos.toString().length - this.completedVideos.toString().length - this.totalScenes.toString().length))}│\n`;
+    // Header line: emoji takes 2 display columns, so we adjust spacing
+    const headerText = this.shutdownMessage
+      ? '⚠️ Shutting Down...'
+      : '🎬 Video Archivist';
+    const headerPadding = 2; // Extra spaces to account for emoji display width
+    const rightSideContent = `[${bar}] ${percent.toString().padStart(3)}%`;
+    const spaceBetween =
+      this.width -
+      4 -
+      headerText.length -
+      headerPadding -
+      rightSideContent.length;
+    output += `│ ${headerText}${' '.repeat(Math.max(0, spaceBetween))}${rightSideContent} │\n`;
 
-    // Active jobs section
+    // Stats line: show chunks, videos, and scenes
+    const statsText = `${this.completedChunks}/${this.totalChunks} chunks • ${this.completedVideos}/${this.totalVideos} videos • ${this.totalScenes} scenes`;
+    const statsPadding = Math.max(0, this.width - 2 - statsText.length);
+    const leftStatsPad = Math.floor(statsPadding / 2);
+    const rightStatsPad = statsPadding - leftStatsPad;
+    output += `│${' '.repeat(leftStatsPad)}${statsText}${' '.repeat(rightStatsPad)}│\n`;
+
+    // Active jobs section - show top N most recently updated
     output += `├${'─'.repeat(this.width - 2)}┤\n`;
-    output += `│ ACTIVE (${this.activeJobs.size}):${' '.repeat(this.width - 14 - this.activeJobs.size.toString().length)}│\n`;
 
-    if (this.activeJobs.size === 0) {
-      output += `│   (waiting...)${' '.repeat(this.width - 17)}│\n`;
+    // Sort jobs by last updated (most recent first) and take top N
+    const sortedJobs = Array.from(this.activeJobs.values())
+      .sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0))
+      .slice(0, this.maxActiveDisplay);
+
+    const totalActive = this.activeJobs.size;
+    const showingCount = sortedJobs.length;
+    const activeHeader =
+      totalActive > showingCount
+        ? `ACTIVE CHUNKS (${showingCount} of ${totalActive}):`
+        : `ACTIVE CHUNKS (${totalActive}):`;
+    output += `│ ${activeHeader}${' '.repeat(Math.max(0, this.width - 3 - activeHeader.length))}│\n`;
+
+    if (sortedJobs.length === 0) {
+      const waitingText = '  (waiting for chunks...)';
+      output += `│ ${waitingText}${' '.repeat(Math.max(0, this.width - 3 - waitingText.length))}│\n`;
     } else {
-      for (const job of this.activeJobs.values()) {
+      for (const job of sortedJobs) {
         const title = job.currentTitle
-          ? ` • "${this.truncate(job.currentTitle, 25)}"`
+          ? ` • "${this.truncate(job.currentTitle, 20)}"`
           : '';
-        const line = `   ▶ ${this.truncate(job.filename, 18)} chunk ${job.chunkNum}/${job.totalChunks}${title}`;
-        output += `│${line}${' '.repeat(Math.max(0, this.width - 3 - line.length))}│\n`;
+        // More compact display: filename truncated to 15 chars
+        const line = `▶ ${this.truncate(job.filename, 15)} [${job.chunkNum}/${job.totalChunks}]${title}`;
+        output += `│ ${line}${' '.repeat(Math.max(0, this.width - 3 - line.length))}│\n`;
       }
     }
 
     // Fill remaining active job slots to keep layout stable
-    const activeJobLines = Math.max(1, this.activeJobs.size);
-    const maxActiveDisplay = 2; // Max concurrent videos
-    for (let i = activeJobLines; i < maxActiveDisplay; i++) {
+    for (let i = sortedJobs.length; i < this.maxActiveDisplay; i++) {
       output += `│${' '.repeat(this.width - 2)}│\n`;
     }
 
@@ -156,7 +208,7 @@ export class TUI extends EventEmitter {
           const reset = '\x1b[0m';
           const text = `${prefix} ${line.message}`;
           const displayText = this.truncate(text, this.width - 4);
-          output += `│ ${color}${displayText}${reset}${' '.repeat(Math.max(0, this.width - 4 - displayText.length))} │\n`;
+          output += `│ ${color}${displayText}${reset}${' '.repeat(Math.max(0, this.width - 4 - displayText.length))}│\n`;
         } else {
           output += `│${' '.repeat(this.width - 2)}│\n`;
         }
@@ -171,45 +223,64 @@ export class TUI extends EventEmitter {
 
   finalize(stats: SummaryStats): void {
     this.stop();
-    this.clearScreen();
 
     // Print summary table
     console.log(`┌${'─'.repeat(this.width - 2)}┐`);
-    console.log(`│ 🏁 COMPLETE${' '.repeat(this.width - 15)}│`);
-    console.log(`├${'─'.repeat(this.width - 2)}┤`);
+    const completeHeader = '🏁 COMPLETE';
     console.log(
-      `│ Total Videos: ${stats.completedVideos}/${stats.totalVideos}${' '.repeat(Math.max(0, this.width - 19 - stats.completedVideos.toString().length - stats.totalVideos.toString().length))}│`,
+      `│ ${completeHeader}${' '.repeat(Math.max(0, this.width - 3 - completeHeader.length))}│`,
     );
+    console.log(`├${'─'.repeat(this.width - 2)}┤`);
+
+    const chunkLine = `Total Chunks: ${stats.completedChunks}/${stats.totalChunks}`;
     console.log(
-      `│ Total Scenes: ${stats.totalScenes}${' '.repeat(Math.max(0, this.width - 17 - stats.totalScenes.toString().length))}│`,
+      `│ ${chunkLine}${' '.repeat(Math.max(0, this.width - 3 - chunkLine.length))}│`,
+    );
+
+    const videoLine = `Total Videos: ${stats.completedVideos}/${stats.totalVideos}`;
+    console.log(
+      `│ ${videoLine}${' '.repeat(Math.max(0, this.width - 3 - videoLine.length))}│`,
+    );
+
+    const sceneLine = `Total Scenes: ${stats.totalScenes}`;
+    console.log(
+      `│ ${sceneLine}${' '.repeat(Math.max(0, this.width - 3 - sceneLine.length))}│`,
     );
 
     if (stats.errors.length > 0) {
+      const errorLine = `Errors: ${stats.errors.length}`;
       console.log(
-        `│ Errors: ${stats.errors.length}${' '.repeat(Math.max(0, this.width - 11 - stats.errors.length.toString().length))}│`,
+        `│ ${errorLine}${' '.repeat(Math.max(0, this.width - 3 - errorLine.length))}│`,
       );
       console.log(`├${'─'.repeat(this.width - 2)}┤`);
-      console.log(`│ ERROR DETAILS:${' '.repeat(this.width - 16)}│`);
+      const errorDetailHeader = 'ERROR DETAILS:';
+      console.log(
+        `│ ${errorDetailHeader}${' '.repeat(Math.max(0, this.width - 3 - errorDetailHeader.length))}│`,
+      );
       for (const err of stats.errors.slice(0, 5)) {
-        const line = `  • ${this.truncate(err.filename, 20)}: ${this.truncate(err.error, 35)}`;
+        const line = `• ${this.truncate(err.filename, 20)}: ${this.truncate(err.error, 35)}`;
         console.log(
-          `│${line}${' '.repeat(Math.max(0, this.width - 3 - line.length))}│`,
+          `│ ${line}${' '.repeat(Math.max(0, this.width - 3 - line.length))}│`,
         );
       }
       if (stats.errors.length > 5) {
+        const moreLine = `... and ${stats.errors.length - 5} more`;
         console.log(
-          `│  ... and ${stats.errors.length - 5} more${' '.repeat(Math.max(0, this.width - 16 - (stats.errors.length - 5).toString().length))}│`,
+          `│ ${moreLine}${' '.repeat(Math.max(0, this.width - 3 - moreLine.length))}│`,
         );
       }
     }
 
     if (stats.warnings.length > 0) {
       console.log(`├${'─'.repeat(this.width - 2)}┤`);
-      console.log(`│ WARNINGS:${' '.repeat(this.width - 12)}│`);
+      const warnHeader = 'WARNINGS:';
+      console.log(
+        `│ ${warnHeader}${' '.repeat(Math.max(0, this.width - 3 - warnHeader.length))}│`,
+      );
       for (const warn of stats.warnings.slice(0, 3)) {
-        const line = `  • ${this.truncate(warn.filename, 25)}: ${warn.message}`;
+        const line = `• ${this.truncate(warn.filename, 25)}: ${warn.message}`;
         console.log(
-          `│${line}${' '.repeat(Math.max(0, this.width - 3 - line.length))}│`,
+          `│ ${line}${' '.repeat(Math.max(0, this.width - 3 - line.length))}│`,
         );
       }
     }
@@ -240,6 +311,14 @@ export class TUI extends EventEmitter {
     }
 
     return lines;
+  }
+
+  private enterAltScreen(): void {
+    this.write('\x1b[?1049h');
+  }
+
+  private exitAltScreen(): void {
+    this.write('\x1b[?1049l');
   }
 
   private hideCursor(): void {

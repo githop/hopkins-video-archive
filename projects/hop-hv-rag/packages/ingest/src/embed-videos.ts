@@ -119,7 +119,7 @@ async function main() {
       targetVideos = await db
         .select()
         .from(videos)
-        .where(sql`${videos.globalSummary} IS NOT NULL`);
+        .where(sql`global_summary IS NOT NULL`);
     } else {
       // Find videos missing from vec_videos
       const existingRes = await db.all<{ rowid: number }>(
@@ -130,7 +130,7 @@ async function main() {
       const allVideos = await db
         .select()
         .from(videos)
-        .where(sql`${videos.globalSummary} IS NOT NULL`);
+        .where(sql`global_summary IS NOT NULL`);
       targetVideos = allVideos.filter((v) => !existingIds.has(v.id));
     }
   } else {
