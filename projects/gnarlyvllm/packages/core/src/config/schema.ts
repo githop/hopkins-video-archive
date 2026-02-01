@@ -12,6 +12,7 @@ export const QuantizationSchema = z.enum([
   'fp8',
   'bitsandbytes',
   'gguf',
+  'compressed-tensors',
 ]);
 export type Quantization = z.infer<typeof QuantizationSchema>;
 
@@ -22,6 +23,7 @@ export const ModelDefaultsSchema = z.object({
   quantization: QuantizationSchema.optional(),
   enforce_eager: z.boolean().optional(),
   enable_tool_calling: z.boolean().optional(),
+  tool_call_parser: z.string().optional(),
   reasoning_parser: z.string().optional(),
   max_num_seqs: z.number().int().positive().optional(),
   max_num_batched_tokens: z.number().int().positive().optional(),
@@ -74,6 +76,7 @@ export type ResolvedModelConfig = ModelConfig & {
   quantization?: Quantization;
   enforce_eager?: boolean;
   enable_tool_calling?: boolean;
+  tool_call_parser?: string;
   reasoning_parser?: string;
   max_num_seqs?: number;
   max_num_batched_tokens?: number;

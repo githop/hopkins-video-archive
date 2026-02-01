@@ -69,6 +69,7 @@ export function resolveModelConfig(
   let quantization: Quantization | undefined = model.defaults?.quantization;
   let enforce_eager = model.defaults?.enforce_eager;
   let enable_tool_calling = model.defaults?.enable_tool_calling;
+  let tool_call_parser = model.defaults?.tool_call_parser;
   let reasoning_parser = model.defaults?.reasoning_parser;
   let max_num_seqs = model.defaults?.max_num_seqs;
   let max_num_batched_tokens = model.defaults?.max_num_batched_tokens;
@@ -98,6 +99,8 @@ export function resolveModelConfig(
         enforce_eager = overrides.enforce_eager;
       if (overrides.enable_tool_calling !== undefined)
         enable_tool_calling = overrides.enable_tool_calling;
+      if (overrides.tool_call_parser !== undefined)
+        tool_call_parser = overrides.tool_call_parser;
       if (overrides.reasoning_parser !== undefined)
         reasoning_parser = overrides.reasoning_parser;
       if (overrides.max_num_seqs !== undefined)
@@ -117,6 +120,7 @@ export function resolveModelConfig(
     quantization,
     enforce_eager,
     enable_tool_calling,
+    tool_call_parser,
     reasoning_parser,
     max_num_seqs,
     max_num_batched_tokens,

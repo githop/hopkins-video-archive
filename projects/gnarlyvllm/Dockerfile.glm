@@ -1,0 +1,13 @@
+# Dockerfile for GLM-4.7 model support
+# Extends vllm-openai:latest with transformers 5.0.0 which includes
+# support for the glm4_moe_lite architecture
+
+FROM docker.io/vllm/vllm-openai:latest
+
+# Install transformers 5.0.0 for GLM-4.7-Flash model support
+# Note: This creates a dependency conflict warning with vLLM 0.15.0,
+# but GLM models require transformers >= 5.0.0 and it works correctly
+RUN pip install --no-cache-dir transformers==5.0.0
+
+LABEL maintainer="gnarlyvllm"
+LABEL description="vLLM container with transformers 5.0.0 for GLM-4.7 support"

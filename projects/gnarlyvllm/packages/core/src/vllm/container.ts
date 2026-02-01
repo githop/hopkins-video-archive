@@ -95,10 +95,12 @@ export function buildVllmContainerOptions(
   // Trust remote code (needed for some models)
   command.push('--trust-remote-code');
 
-  // Tool calling support (Hermes-style for Qwen models)
+  // Tool calling support
   if (model.enable_tool_calling) {
     command.push('--enable-auto-tool-choice');
-    command.push('--tool-call-parser', 'hermes');
+  }
+  if (model.tool_call_parser) {
+    command.push('--tool-call-parser', model.tool_call_parser);
   }
 
   // Reasoning parser (independent of tool calling)

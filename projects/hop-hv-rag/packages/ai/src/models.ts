@@ -4,6 +4,7 @@ export const GENERATION_MODELS = {
     'summarizer-bulk',
     'summarizer-bulk-14b',
     'summarizer-8b',
+    'summarizer-bulk-glm-flash',
   ] as const,
   GOOGLE: ['gemini-3-flash-preview'] as const,
 } as const;
