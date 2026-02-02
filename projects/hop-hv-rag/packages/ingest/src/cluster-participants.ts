@@ -9,11 +9,26 @@ import { GenModelFlagOption, parseGenModelFlag } from './cli-flags.ts';
 
 const DATA_DIR = `${import.meta.dir}/../../../data`;
 
+const BatchSizeFlagOption = { type: 'string' as const };
+const ConcurrencyFlagOption = { type: 'string' as const };
+
+function parseBatchSizeFlag(value: unknown): number {
+  const parsed = parseInt(String(value), 10);
+  return isNaN(parsed) || parsed < 1 ? 100 : parsed;
+}
+
+function parseConcurrencyFlag(value: unknown): number {
+  const parsed = parseInt(String(value), 10);
+  return isNaN(parsed) || parsed < 1 ? 16 : parsed;
+}
+
 async function main() {
   const { values } = parseArgs({
     args: Bun.argv.slice(2),
     options: {
       'gen-model': GenModelFlagOption,
+      'batch-size': BatchSizeFlagOption,
+      concurrency: ConcurrencyFlagOption,
     },
     strict: true,
   });
@@ -30,6 +45,8 @@ async function main() {
     schema: ParticipantClusteringSchema,
     model: parseGenModelFlag(values['gen-model']),
     systemPrompt: PARTICIPANT_CLUSTERING_PROMPT,
+    batchSize: parseBatchSizeFlag(values['batch-size']),
+    concurrency: parseConcurrencyFlag(values['concurrency']),
   });
 }
 

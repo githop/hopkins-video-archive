@@ -316,6 +316,7 @@ class VideoArchivist {
         output: Output.object({
           schema: SceneSummarizationSchema,
         }),
+        maxRetries: 3,
         prompt: `Transcript for the current 3-minute segment:\n\n${text}`,
       });
 
@@ -446,14 +447,20 @@ class VideoArchivist {
           },
           'No object generated - model did not return valid JSON',
         );
-        return null;
+        // Throw with type info so TUI can show appropriate error
+        const err = new Error('AI failed to generate valid scene');
+        (err as Error & { errorType: string }).errorType = 'ai-parse';
+        throw err;
       }
       const message = error instanceof Error ? error.message : String(error);
       logger.error(
         { startTime: startTime.toFixed(0), error: message },
         '❌ Failed after 3 retries',
       );
-      return null;
+      // Throw with type info so TUI can show appropriate error
+      const err = new Error(message);
+      (err as Error & { errorType: string }).errorType = 'api';
+      throw err;
     }
   }
 
@@ -564,6 +571,14 @@ async function main() {
       filename: string;
       message: string;
     }>,
+    failedChunks: [] as Array<{
+      videoId: number;
+      filename: string;
+      chunkNum: number;
+      totalChunks: number;
+      errorType: 'ai-parse' | 'api' | 'unknown';
+      errorMessage: string;
+    }>,
   };
 
   // Per-video progress tracking
@@ -592,7 +607,7 @@ async function main() {
 
   if (!isVerbose) {
     logger.level = 'silent';
-    tui!.start(stats.totalChunks, stats.totalVideos);
+    tui!.start(stats.totalChunks, stats.totalVideos, maxConcurrency);
   } else {
     logger.info(
       { jobs: jobs.length, maxConcurrency },
@@ -600,53 +615,28 @@ async function main() {
     );
   }
 
-  // Setup graceful shutdown
-  let shuttingDown = false;
+  // Setup interrupt handler - exit immediately
   process.on('SIGINT', () => {
-    if (!shuttingDown) {
-      shuttingDown = true;
-      if (!isVerbose && tui) {
-        tui.showShutdownMessage('Finishing active chunks before exit...');
-        tui.addActivity(
-          'info',
-          '⚠️ SIGINT received - completing active work...',
-        );
-      } else {
-        logger.info('⚠️ Finishing active chunks before shutdown...');
-      }
+    if (!isVerbose && tui) {
+      tui.stop();
     }
+    console.log('\n\n⚠️ Interrupted - exiting immediately');
+    process.exit(1);
   });
 
   // Progress callbacks
   const progressCallbacks: ProgressCallbacks = {
-    onVideoStart: (video, totalChunks) => {
-      if (!isVerbose && tui) {
-        tui.setActiveJob({
-          videoId: video.id,
-          filename: video.filename,
-          chunkNum: 0,
-          totalChunks,
-          currentTitle: null,
-        });
-      }
+    onVideoStart: (_video, _totalChunks) => {
+      // No longer needed - TUI tracks pool state, not per-video state
     },
-    onChunkProgress: (video, chunkNum, totalChunks, title) => {
-      if (!isVerbose && tui) {
-        tui.setActiveJob({
-          videoId: video.id,
-          filename: video.filename,
-          chunkNum,
-          totalChunks,
-          currentTitle: title,
-        });
-      }
+    onChunkProgress: (_video, _chunkNum, _totalChunks, _title) => {
+      // No longer needed - chunk completion is tracked separately
     },
-    onSceneCreated: (video, title) => {
+    onSceneCreated: (video, _title) => {
       stats.totalScenes++;
       const progress = videoProgress.get(video.id)!;
       progress.scenesCreated++;
       if (!isVerbose && tui) {
-        tui.addActivity('success', `"${title}" (${video.filename})`);
         tui.updateProgress(
           stats.completedChunks,
           stats.completedVideos,
@@ -657,7 +647,6 @@ async function main() {
     onVideoComplete: (video, sceneCount) => {
       stats.completedVideos++;
       if (!isVerbose && tui) {
-        tui.removeActiveJob(video.id);
         tui.updateProgress(
           stats.completedChunks,
           stats.completedVideos,
@@ -674,7 +663,6 @@ async function main() {
       stats.errors.push({ videoId: video.id, filename: video.filename, error });
       if (!isVerbose && tui) {
         tui.showError(`${video.filename}: ${error}`, 10000);
-        tui.removeActiveJob(video.id);
       } else {
         logger.error({ videoId: video.id, error }, '❌ Video error');
       }
@@ -702,14 +690,9 @@ async function main() {
 
   // Phase 2: Interleaved Execution
   // Fire all jobs through a flat concurrency pool
-  const activePromises = new Set<Promise<void>>();
+  const activePromises = new Set<Promise<unknown>>();
 
   for (const job of jobs) {
-    // Check for shutdown
-    if (shuttingDown) {
-      break;
-    }
-
     // Wait if at max concurrency
     if (activePromises.size >= maxConcurrency) {
       await Promise.race(activePromises);
@@ -717,23 +700,20 @@ async function main() {
 
     // Fire the job
     const progress = videoProgress.get(job.video.id)!;
-
-    if (progress.completedChunks === 0) {
-      progressCallbacks.onVideoStart(job.video, progress.totalChunks);
-    }
+    const chunkStartTime = Date.now();
+    let chunkError: string | null = null;
+    let chunkErrorType: 'ai-parse' | 'api' | 'unknown' = 'unknown';
+    let chunkTitle: string | null = null;
 
     const promise = archivist
       .processChunkJob(job)
       .then(async (title) => {
+        // Store the actual AI-generated title
+        chunkTitle = title;
+
         // Update global and per-video progress
         stats.completedChunks++;
         progress.completedChunks++;
-        progressCallbacks.onChunkProgress(
-          job.video,
-          progress.completedChunks,
-          progress.totalChunks,
-          title,
-        );
         if (title) {
           progressCallbacks.onSceneCreated(job.video, title);
         }
@@ -744,14 +724,69 @@ async function main() {
           await archivist.aggregateVideoMetadata(job.video.id);
           progressCallbacks.onVideoComplete(job.video, progress.scenesCreated);
         }
+
+        return { title, error: null, errorType: null };
       })
       .catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
+        const errorType = (error as Error & { errorType?: string }).errorType;
+        chunkError = message;
+        chunkErrorType =
+          errorType === 'ai-parse'
+            ? 'ai-parse'
+            : errorType === 'api'
+              ? 'api'
+              : 'unknown';
+
+        // Track failed chunk
+        stats.failedChunks.push({
+          videoId: job.video.id,
+          filename: job.video.filename,
+          chunkNum: job.chunkIndex + 1,
+          totalChunks: job.totalChunks,
+          errorType: chunkErrorType,
+          errorMessage: message,
+        });
+
         progressCallbacks.onVideoError(job.video, message);
+        return { title: null, error: message, errorType: chunkErrorType };
+      })
+      .finally(() => {
+        // Record chunk completion for TUI
+        if (!isVerbose && tui) {
+          tui.recordChunkComplete({
+            videoId: job.video.id,
+            filename: job.video.filename,
+            chunkNum: job.chunkIndex + 1,
+            totalChunks: job.totalChunks,
+            title: chunkError ? null : chunkTitle,
+            durationMs: Date.now() - chunkStartTime,
+            timestamp: Date.now(),
+            hadError: chunkError !== null,
+            errorType: chunkErrorType,
+            errorMessage: chunkError ?? undefined,
+          });
+          tui.setInFlightCount(activePromises.size);
+          tui.updateProgress(
+            stats.completedChunks,
+            stats.completedVideos,
+            stats.totalScenes,
+          );
+        }
       });
 
     activePromises.add(promise);
-    promise.finally(() => activePromises.delete(promise));
+
+    if (!isVerbose && tui) {
+      tui.setInFlightCount(activePromises.size);
+    }
+
+    promise.finally(() => {
+      activePromises.delete(promise);
+      if (!isVerbose && tui) {
+        tui.setInFlightCount(activePromises.size);
+      }
+    });
   }
 
   // Wait for all remaining jobs
@@ -767,6 +802,7 @@ async function main() {
       totalScenes: stats.totalScenes,
       errors: stats.errors,
       warnings: stats.warnings,
+      failedChunks: stats.failedChunks,
     });
   } else {
     logger.info('🏁 All videos processed.');

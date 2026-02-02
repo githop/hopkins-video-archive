@@ -1,16 +1,20 @@
 import { EventEmitter } from 'node:events';
 
-interface ActiveJob {
+interface CompletedChunk {
   videoId: number;
   filename: string;
   chunkNum: number;
   totalChunks: number;
-  currentTitle: string | null;
-  lastUpdated?: number; // timestamp for sorting by recency (set internally by TUI)
+  title: string | null;
+  durationMs: number;
+  timestamp: number;
+  hadError: boolean;
+  errorType?: 'ai-parse' | 'api' | 'unknown';
+  errorMessage?: string;
 }
 
 interface ActivityLine {
-  type: 'success' | 'error' | 'info';
+  type: 'success' | 'error' | 'warning' | 'info';
   message: string;
   timestamp: number;
 }
@@ -23,27 +27,42 @@ interface SummaryStats {
   totalScenes: number;
   errors: Array<{ videoId: number; filename: string; error: string }>;
   warnings: Array<{ videoId: number; filename: string; message: string }>;
+  failedChunks: Array<{
+    videoId: number;
+    filename: string;
+    chunkNum: number;
+    totalChunks: number;
+    errorType: 'ai-parse' | 'api' | 'unknown';
+    errorMessage: string;
+  }>;
 }
 
 export class TUI extends EventEmitter {
-  private activeJobs = new Map<number, ActiveJob>();
-  private recentLines: ActivityLine[] = [];
+  private startTime = 0;
+  private recentActivity: ActivityLine[] = [];
+  private inFlightChunks = 0;
+  private maxConcurrency = 0;
   private totalChunks = 0;
-  private completedChunks = 0;
+  private completedChunkCount = 0;
   private completedVideos = 0;
   private totalVideos = 0;
   private totalScenes = 0;
-  private readonly maxLines = 5;
+  private readonly maxActivityLines = 8;
   private readonly width = 80;
-  private readonly maxActiveDisplay = 4; // Show top 4 most recent jobs
   private isActive = false;
   private errorDisplayUntil = 0;
   private errorMessage: string | null = null;
   private shutdownMessage: string | null = null;
 
-  start(totalChunks: number, totalVideos: number): void {
+  start(
+    totalChunks: number,
+    totalVideos: number,
+    maxConcurrency: number,
+  ): void {
     this.totalChunks = totalChunks;
     this.totalVideos = totalVideos;
+    this.maxConcurrency = maxConcurrency;
+    this.startTime = Date.now();
     this.isActive = true;
     this.enterAltScreen();
     this.hideCursor();
@@ -62,28 +81,41 @@ export class TUI extends EventEmitter {
     completedVideos: number,
     totalScenes: number,
   ): void {
-    this.completedChunks = completedChunks;
+    this.completedChunkCount = completedChunks;
     this.completedVideos = completedVideos;
     this.totalScenes = totalScenes;
     if (this.isActive) this.render();
   }
 
-  setActiveJob(job: ActiveJob): void {
-    // Add/update timestamp for recency tracking
-    job.lastUpdated = Date.now();
-    this.activeJobs.set(job.videoId, job);
+  setInFlightCount(count: number): void {
+    this.inFlightChunks = count;
     if (this.isActive) this.render();
   }
 
-  removeActiveJob(videoId: number): void {
-    this.activeJobs.delete(videoId);
-    if (this.isActive) this.render();
+  recordChunkComplete(chunk: CompletedChunk): void {
+    // Build message WITHOUT the icon - the activity renderer adds it
+    const title = chunk.title ? ` "${this.truncate(chunk.title, 22)}"` : '';
+    const duration =
+      chunk.durationMs < 1000
+        ? `${chunk.durationMs}ms`
+        : `${(chunk.durationMs / 1000).toFixed(1)}s`;
+    const message = chunk.hadError
+      ? `${this.truncate(chunk.filename, 25)} chunk ${chunk.chunkNum}/${chunk.totalChunks} (${duration})`
+      : `${this.truncate(chunk.filename, 25)} chunk ${chunk.chunkNum}/${chunk.totalChunks}${title} (${duration})`;
+
+    // Determine activity type based on error type
+    let activityType: ActivityLine['type'] = 'success';
+    if (chunk.hadError) {
+      activityType = chunk.errorType === 'ai-parse' ? 'warning' : 'error';
+    }
+
+    this.addActivity(activityType, message);
   }
 
   addActivity(type: ActivityLine['type'], message: string): void {
-    this.recentLines.push({ type, message, timestamp: Date.now() });
-    if (this.recentLines.length > this.maxLines) {
-      this.recentLines.shift();
+    this.recentActivity.push({ type, message, timestamp: Date.now() });
+    if (this.recentActivity.length > this.maxActivityLines) {
+      this.recentActivity.shift();
     }
     if (this.isActive) this.render();
   }
@@ -99,189 +131,249 @@ export class TUI extends EventEmitter {
     if (this.isActive) this.render();
   }
 
+  private displayWidth(str: string): number {
+    // Count emoji and other wide chars as 2 display columns
+    let width = 0;
+    for (const char of str) {
+      const code = char.codePointAt(0) ?? 0;
+      // Emoji ranges and CJK chars are typically 2 columns wide
+      if (
+        (code >= 0x1f600 && code <= 0x1f64f) || // Emoticons
+        (code >= 0x1f300 && code <= 0x1f5ff) || // Misc symbols
+        (code >= 0x1f680 && code <= 0x1f6ff) || // Transport
+        (code >= 0x2600 && code <= 0x26ff) || // Misc symbols
+        (code >= 0x2700 && code <= 0x27bf) || // Dingbats
+        (code >= 0x1f900 && code <= 0x1f9ff) || // Supplemental
+        (code >= 0x1f1e6 && code <= 0x1f1ff) || // Flags
+        code === 0x26a0 || // Warning sign
+        code === 0x2713 || // Check mark
+        code === 0x2714 || // Heavy check
+        code === 0x2715 || // Multiplication x
+        code === 0x2716 || // Heavy x
+        code === 0x274c || // Cross mark
+        code === 0x274e // Negative cross
+      ) {
+        width += 2;
+      } else {
+        width += 1;
+      }
+    }
+    return width;
+  }
+
+  private padLine(content: string, totalWidth: number): string {
+    const contentWidth = this.displayWidth(content);
+    const padding = Math.max(0, totalWidth - contentWidth);
+    return content + ' '.repeat(padding);
+  }
+
+  private centerLine(content: string, totalWidth: number): string {
+    const contentWidth = this.displayWidth(content);
+    const padding = Math.max(0, totalWidth - contentWidth);
+    const leftPad = Math.floor(padding / 2);
+    const rightPad = padding - leftPad;
+    return ' '.repeat(leftPad) + content + ' '.repeat(rightPad);
+  }
+
+  private getThroughputMetrics(): { rate: number; etaSeconds: number } {
+    const elapsedMs = Date.now() - this.startTime;
+    if (elapsedMs === 0 || this.completedChunkCount === 0) {
+      return { rate: 0, etaSeconds: 0 };
+    }
+
+    const rate = this.completedChunkCount / (elapsedMs / 1000); // chunks per second
+    const remaining = this.totalChunks - this.completedChunkCount;
+    const etaSeconds = remaining > 0 ? remaining / rate : 0;
+
+    return { rate, etaSeconds };
+  }
+
+  private formatDuration(seconds: number): string {
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    if (seconds < 3600)
+      return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.round((seconds % 3600) / 60);
+    return `${hours}h ${mins}m`;
+  }
+
   private render(): void {
     const now = Date.now();
     const showError = this.errorMessage && now < this.errorDisplayUntil;
+    const { rate, etaSeconds } = this.getThroughputMetrics();
 
-    // Build output
     let output = '';
 
-    // Header with chunk-based progress
+    // Top border
+    output += `┌${'─'.repeat(this.width - 2)}┐\n`;
+
+    // Header with progress bar
     const percent =
       this.totalChunks > 0
-        ? Math.round((this.completedChunks / this.totalChunks) * 100)
+        ? Math.round((this.completedChunkCount / this.totalChunks) * 100)
         : 0;
-    const barWidth = 30;
+    const barWidth = 25;
     const filled = Math.round((percent / 100) * barWidth);
     const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
 
-    output += `┌${'─'.repeat(this.width - 2)}┐\n`;
-    // Header line: emoji takes 2 display columns, so we adjust spacing
     const headerText = this.shutdownMessage
       ? '⚠️ Shutting Down...'
       : '🎬 Video Archivist';
-    const headerPadding = 2; // Extra spaces to account for emoji display width
     const rightSideContent = `[${bar}] ${percent.toString().padStart(3)}%`;
-    const spaceBetween =
-      this.width -
-      4 -
-      headerText.length -
-      headerPadding -
-      rightSideContent.length;
-    output += `│ ${headerText}${' '.repeat(Math.max(0, spaceBetween))}${rightSideContent} │\n`;
+    const headerLine = `${headerText}${' '.repeat(Math.max(1, this.width - 4 - this.displayWidth(headerText) - rightSideContent.length))}${rightSideContent}`;
+    output += `│ ${this.padLine(headerLine, this.width - 3)}│\n`;
 
-    // Stats line: show chunks, videos, and scenes
-    const statsText = `${this.completedChunks}/${this.totalChunks} chunks • ${this.completedVideos}/${this.totalVideos} videos • ${this.totalScenes} scenes`;
-    const statsPadding = Math.max(0, this.width - 2 - statsText.length);
-    const leftStatsPad = Math.floor(statsPadding / 2);
-    const rightStatsPad = statsPadding - leftStatsPad;
-    output += `│${' '.repeat(leftStatsPad)}${statsText}${' '.repeat(rightStatsPad)}│\n`;
+    // Stats line
+    const statsText = `${this.completedChunkCount}/${this.totalChunks} chunks • ${this.completedVideos}/${this.totalVideos} videos • ${this.totalScenes} scenes`;
+    output += `│${this.centerLine(statsText, this.width - 2)}│\n`;
 
-    // Active jobs section - show top N most recently updated
+    // Throughput metrics line
+    const rateText =
+      rate > 0
+        ? `${rate.toFixed(1)} chunks/sec • ETA: ${this.formatDuration(etaSeconds)}`
+        : 'Starting...';
+    output += `│${this.centerLine(rateText, this.width - 2)}│\n`;
+
+    // Concurrency pool visualization
     output += `├${'─'.repeat(this.width - 2)}┤\n`;
 
-    // Sort jobs by last updated (most recent first) and take top N
-    const sortedJobs = Array.from(this.activeJobs.values())
-      .sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0))
-      .slice(0, this.maxActiveDisplay);
+    const activeSlots = Math.min(this.inFlightChunks, this.maxConcurrency);
+    const poolWidth = Math.min(this.maxConcurrency, 20); // Cap visual width
+    const activeVisual = Math.round(
+      (activeSlots / this.maxConcurrency) * poolWidth,
+    );
+    const poolBar =
+      '▶'.repeat(activeVisual) + '░'.repeat(poolWidth - activeVisual);
+    const queueDepth =
+      this.totalChunks - this.completedChunkCount - this.inFlightChunks;
+    const poolText = `Pool: [${poolBar}] ${this.inFlightChunks}/${this.maxConcurrency} active • ${queueDepth} queued`;
+    output += `│${this.centerLine(poolText, this.width - 2)}│\n`;
 
-    const totalActive = this.activeJobs.size;
-    const showingCount = sortedJobs.length;
-    const activeHeader =
-      totalActive > showingCount
-        ? `ACTIVE CHUNKS (${showingCount} of ${totalActive}):`
-        : `ACTIVE CHUNKS (${totalActive}):`;
-    output += `│ ${activeHeader}${' '.repeat(Math.max(0, this.width - 3 - activeHeader.length))}│\n`;
-
-    if (sortedJobs.length === 0) {
-      const waitingText = '  (waiting for chunks...)';
-      output += `│ ${waitingText}${' '.repeat(Math.max(0, this.width - 3 - waitingText.length))}│\n`;
-    } else {
-      for (const job of sortedJobs) {
-        const title = job.currentTitle
-          ? ` • "${this.truncate(job.currentTitle, 20)}"`
-          : '';
-        // More compact display: filename truncated to 15 chars
-        const line = `▶ ${this.truncate(job.filename, 15)} [${job.chunkNum}/${job.totalChunks}]${title}`;
-        output += `│ ${line}${' '.repeat(Math.max(0, this.width - 3 - line.length))}│\n`;
-      }
-    }
-
-    // Fill remaining active job slots to keep layout stable
-    for (let i = sortedJobs.length; i < this.maxActiveDisplay; i++) {
-      output += `│${' '.repeat(this.width - 2)}│\n`;
-    }
-
-    // Recent activity section
+    // Activity section
     output += `├${'─'.repeat(this.width - 2)}┤\n`;
 
     if (showError && this.errorMessage) {
-      // Show error instead of recent lines
       const errorLines = this.wrapText(
         `❌ ${this.errorMessage}`,
         this.width - 4,
       );
-      for (const line of errorLines.slice(0, this.maxLines)) {
-        output += `│ \x1b[91m${line}\x1b[0m${' '.repeat(Math.max(0, this.width - 4 - line.length))}│\n`;
+      for (const line of errorLines.slice(0, this.maxActivityLines)) {
+        const paddedLine = this.padLine(line, this.width - 4);
+        output += `│ \x1b[91m${paddedLine}\x1b[0m│\n`;
       }
-      // Fill rest with empty lines
-      for (let i = errorLines.length; i < this.maxLines; i++) {
+      for (let i = errorLines.length; i < this.maxActivityLines; i++) {
         output += `│${' '.repeat(this.width - 2)}│\n`;
       }
     } else {
-      // Show recent activity
-      for (let i = 0; i < this.maxLines; i++) {
-        const line = this.recentLines[i];
+      for (let i = 0; i < this.maxActivityLines; i++) {
+        const line = this.recentActivity[i];
         if (line) {
           const prefix =
             line.type === 'success'
               ? '✅'
               : line.type === 'error'
                 ? '❌'
-                : 'ℹ️';
+                : line.type === 'warning'
+                  ? '⚠️'
+                  : 'ℹ️';
           const color =
             line.type === 'success'
               ? '\x1b[92m'
               : line.type === 'error'
                 ? '\x1b[91m'
-                : '\x1b[96m';
+                : line.type === 'warning'
+                  ? '\x1b[93m'
+                  : '\x1b[96m';
           const reset = '\x1b[0m';
           const text = `${prefix} ${line.message}`;
-          const displayText = this.truncate(text, this.width - 4);
-          output += `│ ${color}${displayText}${reset}${' '.repeat(Math.max(0, this.width - 4 - displayText.length))}│\n`;
+          const paddedText = this.padLine(text, this.width - 4);
+          output += `│ ${color}${paddedText}${reset}│\n`;
         } else {
           output += `│${' '.repeat(this.width - 2)}│\n`;
         }
       }
     }
 
+    // Bottom border
     output += `└${'─'.repeat(this.width - 2)}┘`;
 
-    // Clear and redraw
     this.write(`\x1b[H\x1b[2J${output}`);
   }
 
   finalize(stats: SummaryStats): void {
     this.stop();
 
-    // Print summary table
+    const elapsedMs = Date.now() - this.startTime;
+    const elapsedText = this.formatDuration(elapsedMs / 1000);
+    const avgRate =
+      elapsedMs > 0
+        ? (stats.completedChunks / (elapsedMs / 1000)).toFixed(1)
+        : '0.0';
+
     console.log(`┌${'─'.repeat(this.width - 2)}┐`);
     const completeHeader = '🏁 COMPLETE';
-    console.log(
-      `│ ${completeHeader}${' '.repeat(Math.max(0, this.width - 3 - completeHeader.length))}│`,
-    );
+    console.log(`│ ${this.padLine(completeHeader, this.width - 3)}│`);
     console.log(`├${'─'.repeat(this.width - 2)}┤`);
 
+    const timeLine = `Total Time: ${elapsedText}`;
+    console.log(`│ ${this.padLine(timeLine, this.width - 3)}│`);
+
+    const rateLine = `Avg Rate: ${avgRate} chunks/sec`;
+    console.log(`│ ${this.padLine(rateLine, this.width - 3)}│`);
+
     const chunkLine = `Total Chunks: ${stats.completedChunks}/${stats.totalChunks}`;
-    console.log(
-      `│ ${chunkLine}${' '.repeat(Math.max(0, this.width - 3 - chunkLine.length))}│`,
-    );
+    console.log(`│ ${this.padLine(chunkLine, this.width - 3)}│`);
 
     const videoLine = `Total Videos: ${stats.completedVideos}/${stats.totalVideos}`;
-    console.log(
-      `│ ${videoLine}${' '.repeat(Math.max(0, this.width - 3 - videoLine.length))}│`,
-    );
+    console.log(`│ ${this.padLine(videoLine, this.width - 3)}│`);
 
     const sceneLine = `Total Scenes: ${stats.totalScenes}`;
-    console.log(
-      `│ ${sceneLine}${' '.repeat(Math.max(0, this.width - 3 - sceneLine.length))}│`,
-    );
+    console.log(`│ ${this.padLine(sceneLine, this.width - 3)}│`);
 
     if (stats.errors.length > 0) {
       const errorLine = `Errors: ${stats.errors.length}`;
-      console.log(
-        `│ ${errorLine}${' '.repeat(Math.max(0, this.width - 3 - errorLine.length))}│`,
-      );
+      console.log(`│ ${this.padLine(errorLine, this.width - 3)}│`);
       console.log(`├${'─'.repeat(this.width - 2)}┤`);
       const errorDetailHeader = 'ERROR DETAILS:';
-      console.log(
-        `│ ${errorDetailHeader}${' '.repeat(Math.max(0, this.width - 3 - errorDetailHeader.length))}│`,
-      );
+      console.log(`│ ${this.padLine(errorDetailHeader, this.width - 3)}│`);
       for (const err of stats.errors.slice(0, 5)) {
         const line = `• ${this.truncate(err.filename, 20)}: ${this.truncate(err.error, 35)}`;
-        console.log(
-          `│ ${line}${' '.repeat(Math.max(0, this.width - 3 - line.length))}│`,
-        );
+        console.log(`│ ${this.padLine(line, this.width - 3)}│`);
       }
       if (stats.errors.length > 5) {
         const moreLine = `... and ${stats.errors.length - 5} more`;
-        console.log(
-          `│ ${moreLine}${' '.repeat(Math.max(0, this.width - 3 - moreLine.length))}│`,
-        );
+        console.log(`│ ${this.padLine(moreLine, this.width - 3)}│`);
+      }
+    }
+
+    if (stats.failedChunks.length > 0) {
+      console.log(`├${'─'.repeat(this.width - 2)}┤`);
+      const failedHeader = `FAILED CHUNKS: ${stats.failedChunks.length}`;
+      console.log(`│ ${this.padLine(failedHeader, this.width - 3)}│`);
+      for (const chunk of stats.failedChunks.slice(0, 5)) {
+        const icon = chunk.errorType === 'ai-parse' ? '⚠️' : '❌';
+        const errorLabel =
+          chunk.errorType === 'ai-parse'
+            ? 'AI'
+            : chunk.errorType === 'api'
+              ? 'API'
+              : 'ERR';
+        const line = `• ${icon} ${this.truncate(chunk.filename, 20)} chunk ${chunk.chunkNum}/${chunk.totalChunks} (${errorLabel})`;
+        console.log(`│ ${this.padLine(line, this.width - 3)}│`);
+      }
+      if (stats.failedChunks.length > 5) {
+        const moreLine = `... and ${stats.failedChunks.length - 5} more`;
+        console.log(`│ ${this.padLine(moreLine, this.width - 3)}│`);
       }
     }
 
     if (stats.warnings.length > 0) {
       console.log(`├${'─'.repeat(this.width - 2)}┤`);
       const warnHeader = 'WARNINGS:';
-      console.log(
-        `│ ${warnHeader}${' '.repeat(Math.max(0, this.width - 3 - warnHeader.length))}│`,
-      );
+      console.log(`│ ${this.padLine(warnHeader, this.width - 3)}│`);
       for (const warn of stats.warnings.slice(0, 3)) {
         const line = `• ${this.truncate(warn.filename, 25)}: ${warn.message}`;
-        console.log(
-          `│ ${line}${' '.repeat(Math.max(0, this.width - 3 - line.length))}│`,
-        );
+        console.log(`│ ${this.padLine(line, this.width - 3)}│`);
       }
     }
 
@@ -299,7 +391,7 @@ export class TUI extends EventEmitter {
     let currentLine = '';
 
     for (const word of words) {
-      if ((currentLine + word).length > width) {
+      if (this.displayWidth(currentLine + word) > width) {
         lines.push(currentLine.trim());
         currentLine = word + ' ';
       } else {
