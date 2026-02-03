@@ -37,13 +37,12 @@ async function main() {
       'gen-model': GenModelFlagOption,
       'batch-size': BatchSizeFlagOption,
       concurrency: ConcurrencyFlagOption,
+      verbose: { type: 'boolean', default: false },
     },
     strict: true,
   });
 
   const registry = await runClustering({
-    inputPath: `${DATA_DIR}/unique-participants.json`,
-    outputPath: `${DATA_DIR}/participant-registry.json`,
     dbPath: DB_PATH,
     dbQuery: `
       SELECT
@@ -51,6 +50,7 @@ async function main() {
         GROUP_CONCAT(SUBSTR(evidence_text, 1, 120), ' | ') AS context
       FROM chunk_entity_mentions
       WHERE entity_type IN ('PERSON', 'ROLE')
+        AND entity_id IS NULL
       GROUP BY raw_text
     `,
     dbValueColumn: 'value',
@@ -62,6 +62,8 @@ async function main() {
     systemPrompt: PARTICIPANT_CLUSTERING_PROMPT,
     batchSize: parseBatchSizeFlag(values['batch-size']),
     concurrency: parseConcurrencyFlag(values['concurrency']),
+    verbose: Boolean(values.verbose),
+    tuiHeader: 'Participant Clustering',
   });
 
   const db = createDb(DB_PATH);

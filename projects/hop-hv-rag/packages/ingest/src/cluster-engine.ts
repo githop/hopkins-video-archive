@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { createDb } from '@hop-hv-rag/db';
 import { sql } from 'drizzle-orm';
 import { logger } from '@hop-hv-rag/core';
+import { ClusterTUI } from './cluster-tui.ts';
 
 interface ClassificationEntry {
   canonical: string;
@@ -16,13 +17,26 @@ interface ItemWithContext {
   context?: string;
 }
 
+interface BatchJob {
+  batch: string[];
+  batchIndex: number;
+  totalBatches: number;
+}
+
+class BatchProcessingError extends Error {
+  readonly errorType: 'ai-parse' | 'api';
+
+  constructor(message: string, errorType: 'ai-parse' | 'api') {
+    super(message);
+    this.errorType = errorType;
+  }
+}
+
 export interface ClusteringConfig<
   T extends z.ZodObject<{
     classifications: z.ZodArray<z.ZodObject<z.ZodRawShape>>;
   }>,
 > {
-  inputPath: string;
-  outputPath: string;
   dbPath: string;
   dbQuery: string;
   dbColumn?: string;
@@ -37,6 +51,8 @@ export interface ClusteringConfig<
   categoryFallback: string;
   validCategories: string[];
   model?: GenerationModelName;
+  verbose?: boolean;
+  tuiHeader?: string;
 }
 
 export async function runClustering<
@@ -45,8 +61,6 @@ export async function runClustering<
   }>,
 >(config: ClusteringConfig<T>): Promise<Record<string, ClassificationEntry>> {
   const {
-    inputPath,
-    outputPath,
     dbPath,
     dbQuery,
     dbColumn,
@@ -61,9 +75,12 @@ export async function runClustering<
     categoryFallback,
     validCategories,
     model: modelName,
+    verbose = false,
+    tuiHeader,
   } = config;
 
   const db = createDb(dbPath);
+  const isVerbose = Boolean(verbose);
 
   function mergeContext(existing: string | undefined, next: string): string {
     if (!existing) return next;
@@ -133,254 +150,331 @@ export async function runClustering<
     return { items: Array.from(all).sort(), contextByItem };
   }
 
-  // 1. Ensure unique items file exists
-  if (!(await Bun.file(inputPath).exists())) {
-    logger.info({ inputPath }, 'Generating unique items from database');
-    const { items } = buildItemsFromDb();
-    await Bun.write(inputPath, JSON.stringify(items, null, 2));
+  function planBatchJobs(items: string[]): {
+    jobs: BatchJob[];
+    skippedBatches: number;
+    pendingItems: number;
+  } {
+    const jobs: BatchJob[] = [];
+    const skippedBatches = 0;
+    const pendingItems = items.length;
+
+    for (let i = 0; i < items.length; i += batchSize) {
+      const batch = items.slice(i, i + batchSize);
+      jobs.push({ batch, batchIndex: jobs.length, totalBatches: 0 });
+    }
+
+    const totalBatches = jobs.length;
+    for (const job of jobs) {
+      job.totalBatches = totalBatches;
+    }
+
+    return { jobs, skippedBatches, pendingItems };
   }
 
-  // 2. Load data and existing registry
-  const itemsFile = Bun.file(inputPath);
-  const items = (await itemsFile.json()) as string[];
-  const { contextByItem } = buildItemsFromDb();
+  const { items, contextByItem } = buildItemsFromDb();
   logger.info({ count: items.length }, 'Loaded unique items');
 
-  let registry: Record<string, ClassificationEntry> = {};
-  const registryFile = Bun.file(outputPath);
-  if (await registryFile.exists()) {
-    try {
-      registry = await registryFile.json();
-      logger.info(
-        { existingCount: Object.keys(registry).length },
-        'Resuming from existing entries',
-      );
-    } catch (e) {
-      logger.warn('Could not parse existing registry, starting fresh');
-    }
+  if (items.length === 0) {
+    logger.info('No items available for clustering.');
+    return {};
   }
 
-  // 3. Process batches with concurrency
+  const registry: Record<string, ClassificationEntry> = {};
+
+  logger.info(
+    { itemCount: items.length },
+    'Planning phase: calculating batches',
+  );
+  const { jobs, skippedBatches, pendingItems } = planBatchJobs(items);
+
+  if (skippedBatches > 0) {
+    logger.info({ skippedBatches }, 'Skipping already processed batches');
+  }
+
+  if (jobs.length === 0) {
+    logger.info('No work to do - all batches already processed.');
+    return registry;
+  }
+
   const model = getGenModel(modelName);
   logger.info(
     { model: modelName, batchSize, concurrency },
     'Starting clustering',
   );
-  const activePromises = new Set<Promise<void>>();
-  const totalBatches = Math.ceil(items.length / batchSize);
-  let completedBatches = 0;
-  let processedCount = Object.keys(registry).length;
-  const startTime = Date.now();
 
-  // Calculate already completed batches for resume logging
-  let skipCount = 0;
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
-    const remainingInBatch = batch.filter((p) => !registry[p]);
-    if (remainingInBatch.length === 0) skipCount++;
-  }
-  if (skipCount > 0) {
+  const stats = {
+    totalBatches: jobs.length,
+    completedBatches: 0,
+    totalItems: pendingItems,
+    processedItems: 0,
+    errors: [] as Array<{ batchNum: number; error: string }>,
+    warnings: [] as Array<{ batchNum: number; message: string }>,
+    failedBatches: [] as Array<{
+      batchNum: number;
+      totalBatches: number;
+      errorType: 'ai-parse' | 'api' | 'unknown';
+      errorMessage: string;
+    }>,
+  };
+
+  const tui = isVerbose ? null : new ClusterTUI();
+
+  if (!isVerbose) {
+    logger.level = 'silent';
+    await tui!.start(
+      stats.totalBatches,
+      stats.totalItems,
+      concurrency,
+      tuiHeader,
+    );
+  } else {
     logger.info(
-      { skipCount, totalBatches },
-      'Skipping already processed batches',
+      { totalBatches: stats.totalBatches, concurrency },
+      'Starting interleaved processing',
     );
   }
 
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
-    const remainingInBatch = batch.filter((p) => !registry[p]);
-    const batchIdx = Math.floor(i / batchSize);
-
-    if (remainingInBatch.length === 0) {
-      logger.debug(
-        { batchIdx: batchIdx + 1 },
-        'Batch already complete, skipping',
-      );
-      completedBatches++;
-      continue;
+  process.on('SIGINT', () => {
+    if (!isVerbose && tui) {
+      tui.stop();
     }
+    console.log('\n\nInterrupted - exiting immediately');
+    process.exit(1);
+  });
 
-    // Log progress every 10% or every 5 batches
-    if (
-      completedBatches > 0 &&
-      (completedBatches % Math.max(1, Math.floor(totalBatches / 10)) === 0 ||
-        completedBatches % 5 === 0)
-    ) {
-      const elapsed = (Date.now() - startTime) / 1000;
-      const rate = completedBatches / elapsed;
-      const remaining = (totalBatches - completedBatches) / rate;
+  async function processBatchJob(job: BatchJob): Promise<number> {
+    const batchStartTime = Date.now();
+    const batchWithContext: ItemWithContext[] = job.batch.map((item) => ({
+      value: item,
+      context: contextByItem.get(item),
+    }));
+    const batchLines = batchWithContext.map((entry) =>
+      entry.context ? `${entry.value} || ${entry.context}` : entry.value,
+    );
+    const itemPreview =
+      job.batch.slice(0, 3).join(', ') +
+      (job.batch.length > 3 ? ` (+${job.batch.length - 3} more)` : '');
+
+    if (isVerbose) {
       logger.info(
         {
-          completedBatches,
-          totalBatches,
-          processedItems: processedCount,
-          totalItems: items.length,
-          percent: Math.round((completedBatches / totalBatches) * 100),
-          elapsedSec: Math.round(elapsed),
-          etaSec: Math.round(remaining),
-        },
-        'Progress update',
-      );
-    }
-
-    const promise = (async (
-      currentBatch: string[],
-      currentBatchIdx: number,
-    ) => {
-      const batchStartTime = Date.now();
-      const batchWithContext: ItemWithContext[] = currentBatch.map((item) => ({
-        value: item,
-        context: contextByItem.get(item),
-      }));
-      const batchLines = batchWithContext.map((entry) =>
-        entry.context ? `${entry.value} || ${entry.context}` : entry.value,
-      );
-      const itemPreview =
-        currentBatch.slice(0, 3).join(', ') +
-        (currentBatch.length > 3 ? ` (+${currentBatch.length - 3} more)` : '');
-      logger.info(
-        {
-          batchIdx: currentBatchIdx + 1,
-          totalBatches,
-          itemCount: currentBatch.length,
+          batchIdx: job.batchIndex + 1,
+          totalBatches: job.totalBatches,
+          itemCount: job.batch.length,
           items: itemPreview,
         },
         'Starting batch',
       );
+    }
 
-      try {
-        const { output: classificationsOutput } = await generateText({
-          model,
-          system: systemPrompt,
-          prompt: `Items to classify (one per line):\n${batchLines.join('\n')}`,
-          output: Output.object({
-            schema,
-          }),
-          timeout,
-          maxRetries,
-        });
+    try {
+      const { output: classificationsOutput } = await generateText({
+        model,
+        system: systemPrompt,
+        prompt: `Items to classify (one per line):\n${batchLines.join('\n')}`,
+        output: Output.object({
+          schema,
+        }),
+        timeout,
+        maxRetries,
+      });
 
-        const classifications = classificationsOutput.classifications;
-        const batchEndTime = Date.now();
-        const batchDuration = (batchEndTime - batchStartTime) / 1000;
+      const classifications = classificationsOutput.classifications;
 
-        currentBatch.forEach((original, idx) => {
-          // Find the classification that matches this item.
-          const result =
-            classifications.find((c: Record<string, unknown>) =>
-              Object.values(c).includes(original),
-            ) || classifications[idx];
+      job.batch.forEach((original, idx) => {
+        const result =
+          classifications.find((c: Record<string, unknown>) =>
+            Object.values(c).includes(original),
+          ) || classifications[idx];
 
-          if (result) {
-            const rawCategory = String(result.category).toUpperCase().trim();
-            registry[original] = {
-              canonical: String(result.canonical),
-              category: validCategories.includes(rawCategory)
-                ? rawCategory
-                : categoryFallback,
-              reasoning: String(result.reasoning),
-            };
-          } else {
-            registry[original] = {
-              canonical: original,
-              category: categoryFallback,
-              reasoning: 'Fallback (not in AI output)',
-            };
-          }
-        });
+        if (result) {
+          const rawCategory = String(result.category).toUpperCase().trim();
+          registry[original] = {
+            canonical: String(result.canonical),
+            category: validCategories.includes(rawCategory)
+              ? rawCategory
+              : categoryFallback,
+            reasoning: String(result.reasoning),
+          };
+        } else {
+          registry[original] = {
+            canonical: original,
+            category: categoryFallback,
+            reasoning: 'Fallback (not in AI output)',
+          };
+        }
+      });
 
-        await Bun.write(outputPath, JSON.stringify(registry, null, 2));
-        processedCount += currentBatch.length;
-
+      if (isVerbose) {
+        const batchDuration = (Date.now() - batchStartTime) / 1000;
         logger.info(
           {
-            batchIdx: currentBatchIdx + 1,
-            itemCount: currentBatch.length,
+            batchIdx: job.batchIndex + 1,
+            itemCount: job.batch.length,
             durationSec: batchDuration.toFixed(1),
             classificationsReturned: classifications.length,
           },
           'Batch completed',
         );
-      } catch (error) {
-        const batchEndTime = Date.now();
-        const batchDuration = (batchEndTime - batchStartTime) / 1000;
-
-        if (NoObjectGeneratedError.isInstance(error)) {
-          logger.error(
-            {
-              batchIdx: currentBatchIdx + 1,
-              itemCount: currentBatch.length,
-              items: currentBatch,
-              durationSec: batchDuration.toFixed(1),
-              text: error.text,
-              response: error.response,
-            },
-            'No object generated - model did not return valid JSON',
-          );
-        } else {
-          logger.error(
-            {
-              batchIdx: currentBatchIdx + 1,
-              itemCount: currentBatch.length,
-              items: currentBatch,
-              durationSec: batchDuration.toFixed(1),
-              error: error instanceof Error ? error.message : String(error),
-              errorType: error?.constructor?.name,
-            },
-            'Error processing batch',
-          );
-        }
       }
-    })(remainingInBatch, batchIdx);
 
-    activePromises.add(promise);
-    promise.finally(() => {
-      activePromises.delete(promise);
-      completedBatches++;
-    });
+      return job.batch.length;
+    } catch (error) {
+      const batchDuration = (Date.now() - batchStartTime) / 1000;
 
-    if (activePromises.size >= concurrency) {
-      logger.debug(
-        { active: activePromises.size, concurrency },
-        'Waiting for concurrency slot',
+      if (NoObjectGeneratedError.isInstance(error)) {
+        logger.warn(
+          {
+            batchIdx: job.batchIndex + 1,
+            itemCount: job.batch.length,
+            items: job.batch,
+            durationSec: batchDuration.toFixed(1),
+            text: error.text,
+            response: error.response,
+          },
+          'No object generated - model did not return valid JSON',
+        );
+        throw new BatchProcessingError(
+          'AI failed to generate valid classifications',
+          'ai-parse',
+        );
+      }
+
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(
+        {
+          batchIdx: job.batchIndex + 1,
+          itemCount: job.batch.length,
+          items: job.batch,
+          durationSec: batchDuration.toFixed(1),
+          error: message,
+        },
+        'Error processing batch',
       );
-      await Promise.race(activePromises);
+      throw new BatchProcessingError(message, 'api');
     }
   }
 
-  logger.info(
-    { activeBatches: activePromises.size },
-    'Waiting for remaining batches to complete',
-  );
-  const totalTime = (Date.now() - startTime) / 1000;
-  logger.info(
-    {
-      totalTimeSec: Math.round(totalTime),
-      completedBatches,
-      totalBatches,
-      totalProcessed: Object.keys(registry).length,
-      targetItems: items.length,
-    },
-    'All batches completed',
-  );
+  const activePromises = new Set<Promise<unknown>>();
+  const startTime = Date.now();
 
-  // 4. Final summary
+  for (const job of jobs) {
+    if (activePromises.size >= concurrency) {
+      await Promise.race(activePromises);
+    }
+
+    const batchStartTime = Date.now();
+    let batchError: string | null = null;
+    let batchErrorType: 'ai-parse' | 'api' | 'unknown' = 'unknown';
+    let itemCount = 0;
+
+    const promise = processBatchJob(job)
+      .then((count) => {
+        itemCount = count;
+        stats.processedItems += count;
+        if (!isVerbose && tui) {
+          tui.updateProgress(stats.completedBatches, stats.processedItems);
+        }
+        return { count, error: null, errorType: null };
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        const errorType =
+          error instanceof BatchProcessingError ? error.errorType : 'unknown';
+        batchError = message;
+        batchErrorType =
+          errorType === 'ai-parse'
+            ? 'ai-parse'
+            : errorType === 'api'
+              ? 'api'
+              : 'unknown';
+
+        stats.errors.push({ batchNum: job.batchIndex + 1, error: message });
+        stats.failedBatches.push({
+          batchNum: job.batchIndex + 1,
+          totalBatches: job.totalBatches,
+          errorType: batchErrorType,
+          errorMessage: message,
+        });
+
+        if (!isVerbose && tui) {
+          tui.showError(`Batch ${job.batchIndex + 1}: ${message}`, 10000);
+        } else {
+          logger.error(
+            { batchIdx: job.batchIndex + 1, error: message },
+            'Batch error',
+          );
+        }
+        return { count: 0, error: message, errorType: batchErrorType };
+      })
+      .finally(() => {
+        stats.completedBatches++;
+        if (!isVerbose && tui) {
+          tui.recordBatchComplete({
+            batchNum: job.batchIndex + 1,
+            totalBatches: job.totalBatches,
+            title: batchError ? null : `${itemCount} items`,
+            durationMs: Date.now() - batchStartTime,
+            timestamp: Date.now(),
+            hadError: batchError !== null,
+            errorType: batchErrorType,
+            errorMessage: batchError ?? undefined,
+          });
+          tui.setInFlightCount(activePromises.size);
+          tui.updateProgress(stats.completedBatches, stats.processedItems);
+        }
+      });
+
+    activePromises.add(promise);
+
+    if (!isVerbose && tui) {
+      tui.setInFlightCount(activePromises.size);
+    }
+
+    promise.finally(() => {
+      activePromises.delete(promise);
+      if (!isVerbose && tui) {
+        tui.setInFlightCount(activePromises.size);
+      }
+    });
+  }
+
+  await Promise.all(activePromises);
+
+  if (!isVerbose && tui) {
+    tui.finalize({
+      totalBatches: stats.totalBatches,
+      completedBatches: stats.completedBatches,
+      totalItems: stats.totalItems,
+      processedItems: stats.processedItems,
+      errors: stats.errors,
+      warnings: stats.warnings,
+      failedBatches: stats.failedBatches,
+    });
+  } else {
+    logger.info('All batches processed.');
+  }
+
+  const totalTime = (Date.now() - startTime) / 1000;
   const finalMissing = items.filter((p) => !registry[p]);
   const successCount = items.length - finalMissing.length;
   const successRate = Math.round((successCount / items.length) * 100);
 
   if (finalMissing.length > 0) {
-    logger.error(
-      {
-        missingCount: finalMissing.length,
-        successCount,
-        totalItems: items.length,
-        successRate: `${successRate}%`,
-        missingItems: finalMissing.slice(0, 20), // Show first 20 missing
-      },
-      'Process complete but some items are missing',
-    );
-  } else {
+    if (isVerbose) {
+      logger.error(
+        {
+          missingCount: finalMissing.length,
+          successCount,
+          totalItems: items.length,
+          successRate: `${successRate}%`,
+          missingItems: finalMissing.slice(0, 20),
+        },
+        'Process complete but some items are missing',
+      );
+    }
+  } else if (isVerbose) {
     logger.info(
       {
         totalProcessed: items.length,
