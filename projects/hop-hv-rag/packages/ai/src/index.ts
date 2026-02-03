@@ -30,6 +30,7 @@ function getVllmProvider(): VllmProvider {
   return createOpenAICompatible({
     name: 'vllm',
     baseURL: VLLM_BASE_URL,
+    supportsStructuredOutputs: true,
   });
 }
 
@@ -46,7 +47,7 @@ function getGoogleProvider(): GoogleProvider {
 }
 
 export function getGenModel(
-  modelName: GenerationModelName = 'summarizer',
+  modelName: GenerationModelName = 'summarizer-bulk-30b',
 ): LanguageModel {
   if (isGoogleModel(modelName)) {
     return getGoogleProvider()(modelName);

@@ -1,5 +1,12 @@
 import { logger } from '@hop-hv-rag/core';
 import { parseArgs } from 'node:util';
+import { and, eq } from 'drizzle-orm';
+import {
+  createDb,
+  entities,
+  entityVariants,
+  chunkEntityMentions,
+} from '@hop-hv-rag/db';
 import { runClustering } from './cluster-engine.ts';
 import {
   ACTIVITY_CLUSTERING_PROMPT,
@@ -8,6 +15,7 @@ import {
 import { GenModelFlagOption, parseGenModelFlag } from './cli-flags.ts';
 
 const DATA_DIR = `${import.meta.dir}/../../../data`;
+const DB_PATH = `${DATA_DIR}/hv-rag.db`;
 
 const BatchSizeFlagOption = { type: 'string' as const };
 const ConcurrencyFlagOption = { type: 'string' as const };
@@ -33,13 +41,20 @@ async function main() {
     strict: true,
   });
 
-  await runClustering({
+  const registry = await runClustering({
     inputPath: `${DATA_DIR}/unique-activities.json`,
     outputPath: `${DATA_DIR}/activity-registry.json`,
-    dbPath: `${DATA_DIR}/hv-rag.db`,
-    dbQuery:
-      'SELECT activities FROM videos UNION SELECT activities FROM scenes',
-    dbColumn: 'activities',
+    dbPath: DB_PATH,
+    dbQuery: `
+      SELECT
+        raw_text AS value,
+        GROUP_CONCAT(SUBSTR(evidence_text, 1, 120), ' | ') AS context
+      FROM chunk_entity_mentions
+      WHERE entity_type = 'ACTIVITY'
+      GROUP BY raw_text
+    `,
+    dbValueColumn: 'value',
+    dbContextColumn: 'context',
     categoryFallback: 'RECREATION',
     validCategories: ['SPORT', 'RECREATION', 'HOLIDAY', 'MILESTONE', 'DISCARD'],
     schema: ActivityClusteringSchema,
@@ -48,6 +63,74 @@ async function main() {
     batchSize: parseBatchSizeFlag(values['batch-size']),
     concurrency: parseConcurrencyFlag(values['concurrency']),
   });
+
+  const db = createDb(DB_PATH);
+
+  const normalizeKey = (value: string): string =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9\s'-]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  let applied = 0;
+
+  for (const [rawText, entry] of Object.entries(registry)) {
+    if (entry.category === 'DISCARD') continue;
+    const canonical = entry.canonical.trim();
+    if (!canonical) continue;
+
+    const [entity] = await db
+      .insert(entities)
+      .values({
+        name: canonical,
+        entityType: 'ACTIVITY',
+        subtype: entry.category,
+        normalizedKey: normalizeKey(canonical),
+      })
+      .onConflictDoUpdate({
+        target: entities.name,
+        set: {
+          entityType: 'ACTIVITY',
+          subtype: entry.category,
+          normalizedKey: normalizeKey(canonical),
+        },
+      })
+      .returning();
+
+    const normalizedRaw = normalizeKey(rawText);
+
+    await db
+      .insert(entityVariants)
+      .values({
+        entityId: entity.id,
+        rawText,
+        normalizedRaw,
+        source: 'mention',
+      })
+      .onConflictDoUpdate({
+        target: entityVariants.rawText,
+        set: {
+          entityId: entity.id,
+          normalizedRaw,
+          source: 'mention',
+        },
+      });
+
+    await db
+      .update(chunkEntityMentions)
+      .set({ entityId: entity.id })
+      .where(
+        and(
+          eq(chunkEntityMentions.rawText, rawText),
+          eq(chunkEntityMentions.entityType, 'ACTIVITY'),
+        ),
+      );
+
+    applied++;
+  }
+
+  logger.info({ applied }, 'Applied activity canonicalization');
 }
 
 main().catch((err) => {

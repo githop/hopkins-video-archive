@@ -28,7 +28,7 @@ export function VideoCard({ source, isUsed }: VideoCardProps) {
           {/* Thumbnail Image */}
           <img
             src={source.thumbnailUrl}
-            alt={source.sceneTitle || 'Video thumbnail'}
+            alt={source.chunkTitle || 'Video thumbnail'}
             className="absolute inset-0 w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none';
@@ -68,9 +68,9 @@ export function VideoCard({ source, isUsed }: VideoCardProps) {
           {/* Title */}
           <h3
             className="text-sm font-medium text-text-primary line-clamp-1"
-            title={(source.sceneTitle || source.video.title) ?? undefined}
+            title={(source.chunkTitle || source.video.title) ?? undefined}
           >
-            {source.sceneTitle || source.video.title}
+            {source.chunkTitle || source.video.title}
           </h3>
 
           {/* Badges Row */}

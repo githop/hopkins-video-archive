@@ -13,12 +13,7 @@ import {
   parseCliToModelConfig,
 } from '@hop-hv-rag/ai';
 import { createDb } from '@hop-hv-rag/db';
-import {
-  ParticipantService,
-  LocationService,
-  ActivityService,
-  logger,
-} from '@hop-hv-rag/core';
+import { logger } from '@hop-hv-rag/core';
 import { join, basename } from 'node:path';
 import { parseArgs } from 'node:util';
 
@@ -72,14 +67,7 @@ const TRANSCRIPTS_DIR =
 
 // Initialize services and database with explicit paths
 const dbPath = join(DATA_DIR, 'hv-rag.db');
-const participantPath = join(DATA_DIR, 'participant-registry.json');
-const locationPath = join(DATA_DIR, 'location-registry.json');
-const activityPath = join(DATA_DIR, 'activity-registry.json');
-
 const db = createDb(dbPath);
-const participantService = new ParticipantService(participantPath);
-const locationService = new LocationService(locationPath);
-const activityService = new ActivityService(activityPath);
 
 // Resolve model configuration (Zod validates CLI args)
 const modelConfig = resolveConfig(parseCliToModelConfig(values));
@@ -92,9 +80,6 @@ const archivist = new FamilyArchivist(
   getEmbedModel(modelConfig.embedding),
   getRerankModel(modelConfig.reranking),
   db,
-  participantService,
-  locationService,
-  activityService,
 );
 
 // Initialize archivist (loads registries)

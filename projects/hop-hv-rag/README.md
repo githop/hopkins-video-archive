@@ -8,7 +8,7 @@
 
 The project is structured as a monorepo consisting of several specialized packages:
 
-- 📥 **`@hop-hv-rag/ingest`**: The processing pipeline that extracts semantic scenes, normalizes entities (people and locations), and generates vector embeddings.
+- 📥 **`@hop-hv-rag/ingest`**: The processing pipeline that chunks transcripts, normalizes entities (people and locations), and generates vector embeddings.
 - 🔎 **`@hop-hv-rag/search`**: The query engine that performs hybrid search (Vector + FTS5) and synthesizes answers using LLMs.
 - 🗄️ **`@hop-hv-rag/db`**: Database schema and Drizzle ORM configuration for SQLite (with `sqlite-vec`).
 - 🤖 **`@hop-hv-rag/ai`**: Shared AI utilities and model abstractions (vLLM/LiteLLM).
@@ -18,7 +18,7 @@ The project is structured as a monorepo consisting of several specialized packag
 
 - **Hybrid Search**: Combines semantic vector search (`sqlite-vec`) with traditional keyword search (FTS5) and Reciprocal Rank Fusion (RRF) for highly relevant results.
 - **Entity Normalization**: AI-driven clustering and normalization of participant names and locations mentioned in transcripts.
-- **Semantic Scene Extraction**: Automatically identifies logical scene boundaries within long videos and generates concise summaries.
+- **Semantic Chunking**: Creates focused transcript chunks and concise summaries for downstream retrieval.
 - **RAG Synthesis**: Answers questions by synthesizing information across multiple videos, providing precise citations with Google Drive links and timestamps.
 - **TUI-Ready**: Designed to work seamlessly with TUI interfaces (built with **openTUI**, the same library used by `opencode`).
 
@@ -51,20 +51,22 @@ bun run ingest:init-vec
 # Seed raw metadata and transcriptions
 bun run ingest:seed
 
-# Extract and summarize scenes
-bun run ingest:summarize --all
+# Chunk transcripts and summarize
+bun run ingest:chunk --all
+bun run ingest:summarize-chunks --all
 
-# Normalize participants and locations
+# Extract entities and normalize clusters
+bun run ingest:extract-entities --all
 bun run ingest:cluster-participants
-bun run ingest:migrate-participants
 bun run ingest:cluster-locations
-bun run ingest:migrate-locations
+bun run ingest:cluster-activities
+bun run ingest:materialize-entities
 
 # Generate global video summaries
 bun run ingest:global --all
 
 # Generate embeddings for semantic search
-bun run ingest:embed --all
+bun run ingest:embed-chunks --all
 bun run ingest:embed-videos --all
 ```
 
@@ -76,7 +78,7 @@ Use the `search:rag` command to ask questions in natural language:
 bun run search:rag "When was the last time we visited grandma in Florida?"
 ```
 
-The "Family Archivist" will consult the archive, find relevant scenes, and provide a synthesized answer with citations.
+The "Family Archivist" will consult the archive, find relevant chunks, and provide a synthesized answer with citations.
 
 ## Evaluation
 

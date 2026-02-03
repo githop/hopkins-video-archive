@@ -30,7 +30,7 @@ export const SourceList: React.FC<SourceListProps> = ({
           </h3>
           <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4">
             {usedSources.map((source) => (
-              <SourceCard key={source.sceneId} source={source} isUsed={true} />
+              <SourceCard key={source.chunkId} source={source} isUsed={true} />
             ))}
           </div>
         </div>
@@ -44,7 +44,7 @@ export const SourceList: React.FC<SourceListProps> = ({
           </h3>
           <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4">
             {unusedSources.map((source) => (
-              <SourceCard key={source.sceneId} source={source} isUsed={false} />
+              <SourceCard key={source.chunkId} source={source} isUsed={false} />
             ))}
           </div>
         </div>

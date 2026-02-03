@@ -34,7 +34,7 @@ export const SourceCard: React.FC<SourceCardProps> = ({ source, isUsed }) => {
         >
           <img
             src={source.thumbnailUrl}
-            alt={source.sceneTitle || 'Scene thumbnail'}
+            alt={source.chunkTitle || 'Chunk thumbnail'}
             className="absolute inset-0 w-full h-full object-cover"
             onError={(e) => {
               e.currentTarget.style.display = 'none';
@@ -55,7 +55,7 @@ export const SourceCard: React.FC<SourceCardProps> = ({ source, isUsed }) => {
 
           {/* Title */}
           <h3 className="font-semibold text-gray-900 line-clamp-2 mb-1">
-            {source.sceneTitle || 'Untitled Scene'}
+            {source.chunkTitle || 'Untitled Chunk'}
           </h3>
 
           {/* Video Title */}

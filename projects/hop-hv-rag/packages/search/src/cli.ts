@@ -1,12 +1,7 @@
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createDb } from '@hop-hv-rag/db';
-import {
-  ParticipantService,
-  LocationService,
-  ActivityService,
-  logger,
-} from '@hop-hv-rag/core';
+import { logger } from '@hop-hv-rag/core';
 import {
   getGenModel,
   getEmbedModel,
@@ -42,24 +37,11 @@ async function main() {
   // Set up services for CLI usage
   const DATA_DIR = join(import.meta.dir, '../../../data');
   const db = createDb(join(DATA_DIR, 'hv-rag.db'));
-  const participantService = new ParticipantService(
-    join(DATA_DIR, 'participant-registry.json'),
-  );
-  const locationService = new LocationService(
-    join(DATA_DIR, 'location-registry.json'),
-  );
-  const activityService = new ActivityService(
-    join(DATA_DIR, 'activity-registry.json'),
-  );
-
   const archivist = new FamilyArchivist(
     getGenModel(modelConfig.generation),
     getEmbedModel(modelConfig.embedding),
     getRerankModel(modelConfig.reranking),
     db,
-    participantService,
-    locationService,
-    activityService,
   );
   await archivist.init();
 
@@ -97,7 +79,7 @@ async function main() {
             logger.print(
               `[${s.citationId}] ${s.video.title} @ ${s.timestamp.formatted}`,
             );
-            logger.print(`  ${s.sceneTitle}`);
+            logger.print(`  ${s.chunkTitle}`);
             logger.print(`  ${s.video.videoUrl}\n`);
           }
         }
@@ -108,7 +90,7 @@ async function main() {
             logger.print(
               `[${s.citationId}] ${s.video.title} @ ${s.timestamp.formatted}`,
             );
-            logger.print(`  ${s.sceneTitle}`);
+            logger.print(`  ${s.chunkTitle}`);
           }
         }
       }

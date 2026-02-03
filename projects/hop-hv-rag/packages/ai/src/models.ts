@@ -3,6 +3,7 @@ export const GENERATION_MODELS = {
     'summarizer',
     'summarizer-bulk',
     'summarizer-bulk-14b',
+    'summarizer-bulk-30b',
     'summarizer-8b',
     'summarizer-bulk-glm-flash',
   ] as const,

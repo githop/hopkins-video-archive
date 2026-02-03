@@ -1,8 +1,8 @@
 import React from 'react';
-import type { SceneResult } from '@hop-hv-rag/search';
+import type { ChunkResult } from '@hop-hv-rag/search';
 
 interface SceneCardProps {
-  scene: SceneResult;
+  scene: ChunkResult;
 }
 
 export const SceneCard: React.FC<SceneCardProps> = ({ scene }) => {
@@ -20,7 +20,7 @@ export const SceneCard: React.FC<SceneCardProps> = ({ scene }) => {
           </div>
 
           <h3 className="font-semibold text-gray-900 line-clamp-2 mb-1">
-            {scene.title || 'Untitled Scene'}
+            {scene.title || 'Untitled Chunk'}
           </h3>
 
           <p className="text-xs text-gray-500 mb-3 truncate">

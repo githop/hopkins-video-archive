@@ -1,4 +1,10 @@
-import { EventEmitter } from 'node:events';
+import {
+  BoxRenderable,
+  TextRenderable,
+  TextAttributes,
+  createCliRenderer,
+  type CliRenderer,
+} from '@opentui/core';
 
 interface CompletedChunk {
   videoId: number;
@@ -37,7 +43,8 @@ interface SummaryStats {
   }>;
 }
 
-export class TUI extends EventEmitter {
+export class TUI {
+  private renderer: CliRenderer | null = null;
   private startTime = 0;
   private recentActivity: ActivityLine[] = [];
   private inFlightChunks = 0;
@@ -47,33 +54,47 @@ export class TUI extends EventEmitter {
   private completedVideos = 0;
   private totalVideos = 0;
   private totalScenes = 0;
-  private readonly maxActivityLines = 8;
-  private readonly width = 80;
-  private isActive = false;
-  private errorDisplayUntil = 0;
-  private errorMessage: string | null = null;
-  private shutdownMessage: string | null = null;
+  private readonly maxActivityLines = 10;
+  private errorTimer: ReturnType<typeof setTimeout> | null = null;
 
-  start(
+  private headerText: TextRenderable | null = null;
+  private progressText: TextRenderable | null = null;
+  private statsText: TextRenderable | null = null;
+  private throughputText: TextRenderable | null = null;
+  private poolText: TextRenderable | null = null;
+  private activityLines: TextRenderable[] = [];
+  private errorBox: BoxRenderable | null = null;
+  private errorText: TextRenderable | null = null;
+  private rootBox: BoxRenderable | null = null;
+
+  async start(
     totalChunks: number,
     totalVideos: number,
     maxConcurrency: number,
-  ): void {
+  ): Promise<void> {
     this.totalChunks = totalChunks;
     this.totalVideos = totalVideos;
     this.maxConcurrency = maxConcurrency;
     this.startTime = Date.now();
-    this.isActive = true;
-    this.enterAltScreen();
-    this.hideCursor();
-    this.clearScreen();
-    this.render();
+
+    this.renderer = await createCliRenderer({
+      exitOnCtrlC: true,
+    });
+
+    this.buildUI();
+    this.renderer.start();
   }
 
   stop(): void {
-    this.isActive = false;
-    this.showCursor();
-    this.exitAltScreen();
+    if (this.errorTimer) {
+      clearTimeout(this.errorTimer);
+      this.errorTimer = null;
+    }
+
+    if (this.renderer) {
+      this.renderer.destroy();
+      this.renderer = null;
+    }
   }
 
   updateProgress(
@@ -84,26 +105,42 @@ export class TUI extends EventEmitter {
     this.completedChunkCount = completedChunks;
     this.completedVideos = completedVideos;
     this.totalScenes = totalScenes;
-    if (this.isActive) this.render();
+
+    const percent =
+      this.totalChunks > 0
+        ? Math.round((completedChunks / this.totalChunks) * 100)
+        : 0;
+
+    if (this.progressText) {
+      this.progressText.content = this.formatProgressBar(percent);
+    }
+
+    if (this.statsText) {
+      this.statsText.content = this.formatStats();
+    }
+
+    if (this.throughputText) {
+      this.throughputText.content = this.formatThroughput();
+    }
   }
 
   setInFlightCount(count: number): void {
     this.inFlightChunks = count;
-    if (this.isActive) this.render();
+    if (this.poolText) {
+      this.poolText.content = this.formatPool();
+    }
   }
 
   recordChunkComplete(chunk: CompletedChunk): void {
-    // Build message WITHOUT the icon - the activity renderer adds it
-    const title = chunk.title ? ` "${this.truncate(chunk.title, 22)}"` : '';
+    const title = chunk.title ? ` "${this.truncate(chunk.title, 28)}"` : '';
     const duration =
       chunk.durationMs < 1000
         ? `${chunk.durationMs}ms`
         : `${(chunk.durationMs / 1000).toFixed(1)}s`;
     const message = chunk.hadError
-      ? `${this.truncate(chunk.filename, 25)} chunk ${chunk.chunkNum}/${chunk.totalChunks} (${duration})`
-      : `${this.truncate(chunk.filename, 25)} chunk ${chunk.chunkNum}/${chunk.totalChunks}${title} (${duration})`;
+      ? `${this.truncate(chunk.filename, 25)} ${chunk.chunkNum}/${chunk.totalChunks} (${duration})`
+      : `${this.truncate(chunk.filename, 25)} ${chunk.chunkNum}/${chunk.totalChunks}${title} (${duration})`;
 
-    // Determine activity type based on error type
     let activityType: ActivityLine['type'] = 'success';
     if (chunk.hadError) {
       activityType = chunk.errorType === 'ai-parse' ? 'warning' : 'error';
@@ -117,187 +154,33 @@ export class TUI extends EventEmitter {
     if (this.recentActivity.length > this.maxActivityLines) {
       this.recentActivity.shift();
     }
-    if (this.isActive) this.render();
+    this.updateActivityDisplay();
   }
 
   showError(message: string, durationMs: number = 10000): void {
-    this.errorMessage = message;
-    this.errorDisplayUntil = Date.now() + durationMs;
-    if (this.isActive) this.render();
+    if (this.errorText) {
+      this.errorText.content = `❌ ${message}`;
+    }
+    if (this.errorBox) {
+      this.errorBox.visible = true;
+    }
+
+    if (this.errorTimer) {
+      clearTimeout(this.errorTimer);
+    }
+
+    this.errorTimer = setTimeout(() => {
+      if (this.errorBox) {
+        this.errorBox.visible = false;
+      }
+    }, durationMs);
   }
 
   showShutdownMessage(message: string): void {
-    this.shutdownMessage = message;
-    if (this.isActive) this.render();
-  }
-
-  private displayWidth(str: string): number {
-    // Count emoji and other wide chars as 2 display columns
-    let width = 0;
-    for (const char of str) {
-      const code = char.codePointAt(0) ?? 0;
-      // Emoji ranges and CJK chars are typically 2 columns wide
-      if (
-        (code >= 0x1f600 && code <= 0x1f64f) || // Emoticons
-        (code >= 0x1f300 && code <= 0x1f5ff) || // Misc symbols
-        (code >= 0x1f680 && code <= 0x1f6ff) || // Transport
-        (code >= 0x2600 && code <= 0x26ff) || // Misc symbols
-        (code >= 0x2700 && code <= 0x27bf) || // Dingbats
-        (code >= 0x1f900 && code <= 0x1f9ff) || // Supplemental
-        (code >= 0x1f1e6 && code <= 0x1f1ff) || // Flags
-        code === 0x26a0 || // Warning sign
-        code === 0x2713 || // Check mark
-        code === 0x2714 || // Heavy check
-        code === 0x2715 || // Multiplication x
-        code === 0x2716 || // Heavy x
-        code === 0x274c || // Cross mark
-        code === 0x274e // Negative cross
-      ) {
-        width += 2;
-      } else {
-        width += 1;
-      }
+    if (this.headerText) {
+      this.headerText.content = `⚠️ ${message}`;
+      this.headerText.fg = '#f59e0b';
     }
-    return width;
-  }
-
-  private padLine(content: string, totalWidth: number): string {
-    const contentWidth = this.displayWidth(content);
-    const padding = Math.max(0, totalWidth - contentWidth);
-    return content + ' '.repeat(padding);
-  }
-
-  private centerLine(content: string, totalWidth: number): string {
-    const contentWidth = this.displayWidth(content);
-    const padding = Math.max(0, totalWidth - contentWidth);
-    const leftPad = Math.floor(padding / 2);
-    const rightPad = padding - leftPad;
-    return ' '.repeat(leftPad) + content + ' '.repeat(rightPad);
-  }
-
-  private getThroughputMetrics(): { rate: number; etaSeconds: number } {
-    const elapsedMs = Date.now() - this.startTime;
-    if (elapsedMs === 0 || this.completedChunkCount === 0) {
-      return { rate: 0, etaSeconds: 0 };
-    }
-
-    const rate = this.completedChunkCount / (elapsedMs / 1000); // chunks per second
-    const remaining = this.totalChunks - this.completedChunkCount;
-    const etaSeconds = remaining > 0 ? remaining / rate : 0;
-
-    return { rate, etaSeconds };
-  }
-
-  private formatDuration(seconds: number): string {
-    if (seconds < 60) return `${Math.round(seconds)}s`;
-    if (seconds < 3600)
-      return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.round((seconds % 3600) / 60);
-    return `${hours}h ${mins}m`;
-  }
-
-  private render(): void {
-    const now = Date.now();
-    const showError = this.errorMessage && now < this.errorDisplayUntil;
-    const { rate, etaSeconds } = this.getThroughputMetrics();
-
-    let output = '';
-
-    // Top border
-    output += `┌${'─'.repeat(this.width - 2)}┐\n`;
-
-    // Header with progress bar
-    const percent =
-      this.totalChunks > 0
-        ? Math.round((this.completedChunkCount / this.totalChunks) * 100)
-        : 0;
-    const barWidth = 25;
-    const filled = Math.round((percent / 100) * barWidth);
-    const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
-
-    const headerText = this.shutdownMessage
-      ? '⚠️ Shutting Down...'
-      : '🎬 Video Archivist';
-    const rightSideContent = `[${bar}] ${percent.toString().padStart(3)}%`;
-    const headerLine = `${headerText}${' '.repeat(Math.max(1, this.width - 4 - this.displayWidth(headerText) - rightSideContent.length))}${rightSideContent}`;
-    output += `│ ${this.padLine(headerLine, this.width - 3)}│\n`;
-
-    // Stats line
-    const statsText = `${this.completedChunkCount}/${this.totalChunks} chunks • ${this.completedVideos}/${this.totalVideos} videos • ${this.totalScenes} scenes`;
-    output += `│${this.centerLine(statsText, this.width - 2)}│\n`;
-
-    // Throughput metrics line
-    const rateText =
-      rate > 0
-        ? `${rate.toFixed(1)} chunks/sec • ETA: ${this.formatDuration(etaSeconds)}`
-        : 'Starting...';
-    output += `│${this.centerLine(rateText, this.width - 2)}│\n`;
-
-    // Concurrency pool visualization
-    output += `├${'─'.repeat(this.width - 2)}┤\n`;
-
-    const activeSlots = Math.min(this.inFlightChunks, this.maxConcurrency);
-    const poolWidth = Math.min(this.maxConcurrency, 20); // Cap visual width
-    const activeVisual = Math.round(
-      (activeSlots / this.maxConcurrency) * poolWidth,
-    );
-    const poolBar =
-      '▶'.repeat(activeVisual) + '░'.repeat(poolWidth - activeVisual);
-    const queueDepth =
-      this.totalChunks - this.completedChunkCount - this.inFlightChunks;
-    const poolText = `Pool: [${poolBar}] ${this.inFlightChunks}/${this.maxConcurrency} active • ${queueDepth} queued`;
-    output += `│${this.centerLine(poolText, this.width - 2)}│\n`;
-
-    // Activity section
-    output += `├${'─'.repeat(this.width - 2)}┤\n`;
-
-    if (showError && this.errorMessage) {
-      const errorLines = this.wrapText(
-        `❌ ${this.errorMessage}`,
-        this.width - 4,
-      );
-      for (const line of errorLines.slice(0, this.maxActivityLines)) {
-        const paddedLine = this.padLine(line, this.width - 4);
-        output += `│ \x1b[91m${paddedLine}\x1b[0m│\n`;
-      }
-      for (let i = errorLines.length; i < this.maxActivityLines; i++) {
-        output += `│${' '.repeat(this.width - 2)}│\n`;
-      }
-    } else {
-      for (let i = 0; i < this.maxActivityLines; i++) {
-        const line = this.recentActivity[i];
-        if (line) {
-          const prefix =
-            line.type === 'success'
-              ? '✅'
-              : line.type === 'error'
-                ? '❌'
-                : line.type === 'warning'
-                  ? '⚠️'
-                  : 'ℹ️';
-          const color =
-            line.type === 'success'
-              ? '\x1b[92m'
-              : line.type === 'error'
-                ? '\x1b[91m'
-                : line.type === 'warning'
-                  ? '\x1b[93m'
-                  : '\x1b[96m';
-          const reset = '\x1b[0m';
-          const text = `${prefix} ${line.message}`;
-          const paddedText = this.padLine(text, this.width - 4);
-          output += `│ ${color}${paddedText}${reset}│\n`;
-        } else {
-          output += `│${' '.repeat(this.width - 2)}│\n`;
-        }
-      }
-    }
-
-    // Bottom border
-    output += `└${'─'.repeat(this.width - 2)}┘`;
-
-    this.write(`\x1b[H\x1b[2J${output}`);
   }
 
   finalize(stats: SummaryStats): void {
@@ -310,46 +193,71 @@ export class TUI extends EventEmitter {
         ? (stats.completedChunks / (elapsedMs / 1000)).toFixed(1)
         : '0.0';
 
-    console.log(`┌${'─'.repeat(this.width - 2)}┐`);
-    const completeHeader = '🏁 COMPLETE';
-    console.log(`│ ${this.padLine(completeHeader, this.width - 3)}│`);
-    console.log(`├${'─'.repeat(this.width - 2)}┤`);
-
-    const timeLine = `Total Time: ${elapsedText}`;
-    console.log(`│ ${this.padLine(timeLine, this.width - 3)}│`);
-
-    const rateLine = `Avg Rate: ${avgRate} chunks/sec`;
-    console.log(`│ ${this.padLine(rateLine, this.width - 3)}│`);
-
-    const chunkLine = `Total Chunks: ${stats.completedChunks}/${stats.totalChunks}`;
-    console.log(`│ ${this.padLine(chunkLine, this.width - 3)}│`);
-
-    const videoLine = `Total Videos: ${stats.completedVideos}/${stats.totalVideos}`;
-    console.log(`│ ${this.padLine(videoLine, this.width - 3)}│`);
-
-    const sceneLine = `Total Scenes: ${stats.totalScenes}`;
-    console.log(`│ ${this.padLine(sceneLine, this.width - 3)}│`);
+    console.log('');
+    console.log(
+      '┌─────────────────────────────────────────────────────────────────┐',
+    );
+    console.log(
+      '│ 🏁 COMPLETE                                                      │',
+    );
+    console.log(
+      '├─────────────────────────────────────────────────────────────────┤',
+    );
+    console.log(`│ Total Time: ${elapsedText.padEnd(52)}│`);
+    console.log(
+      `│ Avg Rate: ${avgRate} chunks/sec${''.padEnd(42 - avgRate.length)}│`,
+    );
+    console.log(
+      `│ Total Chunks: ${stats.completedChunks}/${stats.totalChunks}${''.padEnd(
+        46 -
+          String(stats.completedChunks).length -
+          String(stats.totalChunks).length,
+      )}│`,
+    );
+    console.log(
+      `│ Total Videos: ${stats.completedVideos}/${stats.totalVideos}${''.padEnd(
+        46 -
+          String(stats.completedVideos).length -
+          String(stats.totalVideos).length,
+      )}│`,
+    );
+    console.log(
+      `│ Total Scenes: ${stats.totalScenes}${''.padEnd(
+        51 - String(stats.totalScenes).length,
+      )}│`,
+    );
 
     if (stats.errors.length > 0) {
-      const errorLine = `Errors: ${stats.errors.length}`;
-      console.log(`│ ${this.padLine(errorLine, this.width - 3)}│`);
-      console.log(`├${'─'.repeat(this.width - 2)}┤`);
-      const errorDetailHeader = 'ERROR DETAILS:';
-      console.log(`│ ${this.padLine(errorDetailHeader, this.width - 3)}│`);
+      console.log(
+        '├─────────────────────────────────────────────────────────────────┤',
+      );
+      console.log(
+        `│ Errors: ${stats.errors.length}${''.padEnd(
+          57 - String(stats.errors.length).length,
+        )}│`,
+      );
+      console.log(
+        '├─────────────────────────────────────────────────────────────────┤',
+      );
+      console.log(
+        '│ ERROR DETAILS:                                                   │',
+      );
       for (const err of stats.errors.slice(0, 5)) {
         const line = `• ${this.truncate(err.filename, 20)}: ${this.truncate(err.error, 35)}`;
-        console.log(`│ ${this.padLine(line, this.width - 3)}│`);
+        console.log(`│ ${line.padEnd(65)}│`);
       }
       if (stats.errors.length > 5) {
         const moreLine = `... and ${stats.errors.length - 5} more`;
-        console.log(`│ ${this.padLine(moreLine, this.width - 3)}│`);
+        console.log(`│ ${moreLine.padEnd(65)}│`);
       }
     }
 
     if (stats.failedChunks.length > 0) {
-      console.log(`├${'─'.repeat(this.width - 2)}┤`);
+      console.log(
+        '├─────────────────────────────────────────────────────────────────┤',
+      );
       const failedHeader = `FAILED CHUNKS: ${stats.failedChunks.length}`;
-      console.log(`│ ${this.padLine(failedHeader, this.width - 3)}│`);
+      console.log(`│ ${failedHeader.padEnd(65)}│`);
       for (const chunk of stats.failedChunks.slice(0, 5)) {
         const icon = chunk.errorType === 'ai-parse' ? '⚠️' : '❌';
         const errorLabel =
@@ -359,73 +267,234 @@ export class TUI extends EventEmitter {
               ? 'API'
               : 'ERR';
         const line = `• ${icon} ${this.truncate(chunk.filename, 20)} chunk ${chunk.chunkNum}/${chunk.totalChunks} (${errorLabel})`;
-        console.log(`│ ${this.padLine(line, this.width - 3)}│`);
+        console.log(`│ ${line.padEnd(65)}│`);
       }
       if (stats.failedChunks.length > 5) {
         const moreLine = `... and ${stats.failedChunks.length - 5} more`;
-        console.log(`│ ${this.padLine(moreLine, this.width - 3)}│`);
+        console.log(`│ ${moreLine.padEnd(65)}│`);
       }
     }
 
     if (stats.warnings.length > 0) {
-      console.log(`├${'─'.repeat(this.width - 2)}┤`);
-      const warnHeader = 'WARNINGS:';
-      console.log(`│ ${this.padLine(warnHeader, this.width - 3)}│`);
+      console.log(
+        '├─────────────────────────────────────────────────────────────────┤',
+      );
+      console.log(
+        '│ WARNINGS:                                                        │',
+      );
       for (const warn of stats.warnings.slice(0, 3)) {
         const line = `• ${this.truncate(warn.filename, 25)}: ${warn.message}`;
-        console.log(`│ ${this.padLine(line, this.width - 3)}│`);
+        console.log(`│ ${line.padEnd(65)}│`);
       }
     }
 
-    console.log(`└${'─'.repeat(this.width - 2)}┘`);
+    console.log(
+      '└─────────────────────────────────────────────────────────────────┘',
+    );
+  }
+
+  private buildUI(): void {
+    if (!this.renderer) return;
+
+    const root = new BoxRenderable(this.renderer, {
+      flexDirection: 'column',
+      padding: 1,
+      gap: 1,
+      width: this.renderer.width,
+      height: this.renderer.height,
+    });
+    this.rootBox = root;
+
+    this.renderer.on('resize', (width, height) => {
+      if (this.rootBox) {
+        this.rootBox.width = width;
+        this.rootBox.height = height;
+      }
+    });
+
+    const headerBox = new BoxRenderable(this.renderer, {
+      border: true,
+      borderStyle: 'rounded',
+      borderColor: '#3b82f6',
+      padding: 1,
+      flexDirection: 'column',
+      gap: 1,
+    });
+
+    this.headerText = new TextRenderable(this.renderer, {
+      content: '🎬 Video Archivist',
+      fg: '#3b82f6',
+      attributes: TextAttributes.BOLD,
+    });
+
+    this.progressText = new TextRenderable(this.renderer, {
+      content: this.formatProgressBar(0),
+      fg: '#9ca3af',
+    });
+
+    headerBox.add(this.headerText);
+    headerBox.add(this.progressText);
+    root.add(headerBox);
+
+    const statsBox = new BoxRenderable(this.renderer, {
+      border: true,
+      borderStyle: 'single',
+      borderColor: '#6b7280',
+      padding: 1,
+      flexDirection: 'column',
+      gap: 0,
+    });
+
+    this.statsText = new TextRenderable(this.renderer, {
+      content: this.formatStats(),
+      fg: '#d1d5db',
+    });
+
+    this.throughputText = new TextRenderable(this.renderer, {
+      content: 'Starting...',
+      fg: '#9ca3af',
+    });
+
+    this.poolText = new TextRenderable(this.renderer, {
+      content: this.formatPool(),
+      fg: '#cbd5f5',
+    });
+
+    statsBox.add(this.statsText);
+    statsBox.add(this.throughputText);
+    statsBox.add(this.poolText);
+    root.add(statsBox);
+
+    const activityBox = new BoxRenderable(this.renderer, {
+      border: true,
+      borderStyle: 'single',
+      borderColor: '#374151',
+      padding: 1,
+      flexDirection: 'column',
+      gap: 0,
+      flexGrow: 1,
+    });
+
+    const activityHeader = new TextRenderable(this.renderer, {
+      content: 'Activity Log',
+      fg: '#9ca3af',
+      attributes: TextAttributes.BOLD,
+    });
+    activityBox.add(activityHeader);
+
+    for (let i = 0; i < this.maxActivityLines; i++) {
+      const line = new TextRenderable(this.renderer, {
+        content: '',
+        fg: '#4b5563',
+      });
+      this.activityLines.push(line);
+      activityBox.add(line);
+    }
+
+    root.add(activityBox);
+
+    this.errorBox = new BoxRenderable(this.renderer, {
+      border: true,
+      borderStyle: 'rounded',
+      borderColor: '#ef4444',
+      backgroundColor: '#3f1d1d',
+      padding: 1,
+      flexDirection: 'column',
+    });
+    this.errorBox.visible = false;
+
+    this.errorText = new TextRenderable(this.renderer, {
+      content: '',
+      fg: '#fecaca',
+    });
+    this.errorBox.add(this.errorText);
+    root.add(this.errorBox);
+
+    this.renderer.root.add(root);
+  }
+
+  private updateActivityDisplay(): void {
+    for (let i = 0; i < this.maxActivityLines; i++) {
+      const line = this.activityLines[i];
+      const activity = this.recentActivity[i];
+
+      if (activity) {
+        const icon =
+          activity.type === 'success'
+            ? '✅'
+            : activity.type === 'error'
+              ? '❌'
+              : activity.type === 'warning'
+                ? '⚠️'
+                : 'ℹ️';
+
+        const color =
+          activity.type === 'success'
+            ? '#22c55e'
+            : activity.type === 'error'
+              ? '#ef4444'
+              : activity.type === 'warning'
+                ? '#f59e0b'
+                : '#3b82f6';
+
+        line.content = `${icon} ${activity.message}`;
+        line.fg = color;
+      } else {
+        line.content = '';
+        line.fg = '#4b5563';
+      }
+    }
+  }
+
+  private formatProgressBar(percent: number): string {
+    const barWidth = 30;
+    const filled = Math.round((percent / 100) * barWidth);
+    const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
+    return `[${bar}] ${percent.toString().padStart(3)}%`;
+  }
+
+  private formatStats(): string {
+    return `${this.completedChunkCount}/${this.totalChunks} chunks • ${this.completedVideos}/${this.totalVideos} videos • ${this.totalScenes} scenes`;
+  }
+
+  private formatThroughput(): string {
+    const elapsedMs = Date.now() - this.startTime;
+    if (elapsedMs === 0 || this.completedChunkCount === 0) {
+      return 'Starting...';
+    }
+
+    const rate = this.completedChunkCount / (elapsedMs / 1000);
+    const remaining = this.totalChunks - this.completedChunkCount;
+    const etaSeconds = remaining > 0 ? remaining / rate : 0;
+
+    return `${rate.toFixed(1)} chunks/sec • ETA: ${this.formatDuration(etaSeconds)}`;
+  }
+
+  private formatPool(): string {
+    const activeSlots = Math.min(this.inFlightChunks, this.maxConcurrency);
+    const poolWidth = Math.min(this.maxConcurrency, 20);
+    const activeVisual = Math.round(
+      (activeSlots / this.maxConcurrency) * poolWidth,
+    );
+    const poolBar =
+      '▶'.repeat(activeVisual) + '░'.repeat(poolWidth - activeVisual);
+    const queueDepth =
+      this.totalChunks - this.completedChunkCount - this.inFlightChunks;
+
+    return `Pool: [${poolBar}] ${this.inFlightChunks}/${this.maxConcurrency} active • ${queueDepth} queued`;
+  }
+
+  private formatDuration(seconds: number): string {
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    if (seconds < 3600)
+      return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.round((seconds % 3600) / 60);
+    return `${hours}h ${mins}m`;
   }
 
   private truncate(str: string, maxLength: number): string {
     if (str.length <= maxLength) return str;
     return str.slice(0, maxLength - 3) + '...';
-  }
-
-  private wrapText(text: string, width: number): string[] {
-    const words = text.split(' ');
-    const lines: string[] = [];
-    let currentLine = '';
-
-    for (const word of words) {
-      if (this.displayWidth(currentLine + word) > width) {
-        lines.push(currentLine.trim());
-        currentLine = word + ' ';
-      } else {
-        currentLine += word + ' ';
-      }
-    }
-    if (currentLine.trim()) {
-      lines.push(currentLine.trim());
-    }
-
-    return lines;
-  }
-
-  private enterAltScreen(): void {
-    this.write('\x1b[?1049h');
-  }
-
-  private exitAltScreen(): void {
-    this.write('\x1b[?1049l');
-  }
-
-  private hideCursor(): void {
-    this.write('\x1b[?25l');
-  }
-
-  private showCursor(): void {
-    this.write('\x1b[?25h');
-  }
-
-  private clearScreen(): void {
-    this.write('\x1b[2J\x1b[H');
-  }
-
-  private write(str: string): void {
-    process.stdout.write(str);
   }
 }

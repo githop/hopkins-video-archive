@@ -1,6 +1,5 @@
-# gnarlyvllm.toml - Minimal config for testing
-
 [settings]
+litellm_port = 4000
 huggingface_cache = "~/.cache/huggingface"
 
 [models.summarizer]
@@ -40,6 +39,7 @@ port = 8003
 gpu_memory_utilization = 0.95
 max_model_len = 8192
 max_num_seqs = 32           # High concurrency support
+reasoning_parser = "qwen3"
 
 [models.summarizer-bulk-14b]
 repo = "Qwen/Qwen3-14B-AWQ"
@@ -94,6 +94,20 @@ max_model_len = 8192
 # reasoning_parser = "glm45"
 max_num_seqs = 16
 enforce_eager = true
+
+[models.summarizer-bulk-30b]
+repo = "QuantTrio/Qwen3-30B-A3B-Thinking-2507-AWQ"
+task = "generate"
+port = 8010
+
+[models.summarizer-bulk-30b.defaults]
+gpu_memory_utilization = 0.9
+max_model_len = 8192
+max_num_seqs = 16
+enable_expert_parallel = true
+swap_space = 16
+max_seq_len_to_capture = 32768
+reasoning_parser = "deepseek_r1"
 
 [stacks.rag]
 description = "Chat and Embedding stack for RAG"

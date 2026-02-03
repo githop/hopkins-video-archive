@@ -24,6 +24,16 @@ async function main() {
   `),
   );
 
+  logger.info('Creating vec_chunks...');
+  await db.run(
+    sql.raw(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
+      rowid INTEGER PRIMARY KEY,
+      chunk_embedding FLOAT[1024]
+    );
+  `),
+  );
+
   logger.info('Creating vec_videos...');
   await db.run(
     sql.raw(`

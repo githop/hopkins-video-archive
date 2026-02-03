@@ -1,14 +1,14 @@
 import {
   createDb,
   videos,
-  scenes,
+  chunks,
+  chunkSummaries,
   type Video,
-  type Scene,
 } from '@hop-hv-rag/db';
 import { getGenModel } from '@hop-hv-rag/ai';
 import { logger } from '@hop-hv-rag/core';
 import { generateText, type LanguageModel } from 'ai';
-import { eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { GLOBAL_SUMMARY_PROMPT } from './prompts.ts';
@@ -22,7 +22,7 @@ const DB_PATH = `${DATA_DIR}/hv-rag.db`;
 
 /**
  * GlobalArchivist: Generates a global "Archival Abstract" for a video
- * by synthesizing its constituent scenes.
+ * by synthesizing its constituent chunk summaries.
  */
 class GlobalArchivist {
   constructor(
@@ -48,23 +48,59 @@ class GlobalArchivist {
       '🎥 Generating global summary',
     );
 
-    // Fetch all scenes for this video
-    const videoScenes = await this.db
-      .select()
-      .from(scenes)
-      .where(eq(scenes.videoId, video.id))
-      .orderBy(scenes.startTime);
+    const summaryRows = await this.db
+      .select({
+        chunkId: chunkSummaries.chunkId,
+        title: chunkSummaries.title,
+        summary: chunkSummaries.summary,
+        startTime: chunks.startTime,
+      })
+      .from(chunkSummaries)
+      .innerJoin(chunks, eq(chunkSummaries.chunkId, chunks.id))
+      .where(
+        and(
+          eq(chunks.videoId, video.id),
+          eq(chunkSummaries.summaryType, 'scene'),
+        ),
+      )
+      .orderBy(desc(chunkSummaries.id));
 
-    if (videoScenes.length === 0) {
+    const latestByChunk = new Map<
+      number,
+      {
+        title: string;
+        summary: string;
+        startTime: number;
+      }
+    >();
+
+    for (const row of summaryRows) {
+      if (!latestByChunk.has(row.chunkId)) {
+        latestByChunk.set(row.chunkId, {
+          title: row.title,
+          summary: row.summary,
+          startTime: row.startTime,
+        });
+      }
+    }
+
+    const chunkSummariesSorted = Array.from(latestByChunk.values()).sort(
+      (a, b) => a.startTime - b.startTime,
+    );
+
+    if (chunkSummariesSorted.length === 0) {
       logger.warn(
         { videoId: video.id },
-        '⚠️  No scenes found. Cannot generate global summary.',
+        '⚠️  No chunk summaries found. Cannot generate global summary.',
       );
       return;
     }
 
     try {
-      const summary = await this.generateGlobalSummary(video, videoScenes);
+      const summary = await this.generateGlobalSummary(
+        video,
+        chunkSummariesSorted,
+      );
 
       // Update the video record
       await this.db
@@ -92,13 +128,13 @@ class GlobalArchivist {
    */
   private async generateGlobalSummary(
     video: Video,
-    videoScenes: Scene[],
+    summaryRows: Array<{ title: string; summary: string; startTime: number }>,
   ): Promise<string> {
     // Construct context from scenes
-    const sceneContext = videoScenes
-      .map((s) => {
-        const time = this.formatTime(s.startTime);
-        return `[${time}] ${s.title || 'Untitled'}: ${s.summary}`;
+    const sceneContext = summaryRows
+      .map((row) => {
+        const time = this.formatTime(row.startTime);
+        return `[${time}] ${row.title || 'Untitled'}: ${row.summary}`;
       })
       .join('\n');
 
@@ -112,7 +148,7 @@ ${sceneContext}`;
     logger.debug(
       {
         videoId: video.id,
-        sceneCount: videoScenes.length,
+        sceneCount: summaryRows.length,
         promptLength: userPrompt.length,
       },
       '🔍 LLM Context Payload',

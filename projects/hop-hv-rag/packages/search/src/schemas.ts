@@ -1,25 +1,16 @@
 import { z } from 'zod';
-import {
-  PersonSchema,
-  LocationSchema,
-  ActivitySchema,
-  type Person,
-  type Location,
-  type Activity,
-} from '@hop-hv-rag/db/validation';
+import { EntitySchema, type Entity } from '@hop-hv-rag/db/validation';
 
-// Re-export schemas for backward compatibility
-// Person is called Participant in the search domain
-export { PersonSchema as ParticipantSchema, LocationSchema, ActivitySchema };
-export type { Person as Participant, Location, Activity };
+export { EntitySchema };
+export type { Entity };
 
 /**
  * Schema for a source (scene) returned from the archive search
  */
 export const SourceSchema = z.object({
-  sceneId: z.number(),
+  chunkId: z.number(),
   citationId: z.number(), // [1], [2], [3], etc.
-  sceneTitle: z.string().nullable(),
+  chunkTitle: z.string().nullable(),
   summary: z.string(),
   thumbnailUrl: z.string(),
   video: z.object({
@@ -36,9 +27,9 @@ export const SourceSchema = z.object({
     endSeconds: z.number(),
     formatted: z.string(), // "MM:SS"
   }),
-  participants: z.array(PersonSchema),
-  locations: z.array(LocationSchema),
-  activities: z.array(ActivitySchema),
+  participants: z.array(EntitySchema),
+  locations: z.array(EntitySchema),
+  activities: z.array(EntitySchema),
   globalSummary: z.string().nullable().optional(),
 });
 

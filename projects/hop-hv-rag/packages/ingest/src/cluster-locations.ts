@@ -1,5 +1,12 @@
 import { logger } from '@hop-hv-rag/core';
 import { parseArgs } from 'node:util';
+import { and, eq, inArray } from 'drizzle-orm';
+import {
+  createDb,
+  entities,
+  entityVariants,
+  chunkEntityMentions,
+} from '@hop-hv-rag/db';
 import { runClustering } from './cluster-engine.ts';
 import {
   LOCATION_CLUSTERING_PROMPT,
@@ -8,6 +15,7 @@ import {
 import { GenModelFlagOption, parseGenModelFlag } from './cli-flags.ts';
 
 const DATA_DIR = `${import.meta.dir}/../../../data`;
+const DB_PATH = `${DATA_DIR}/hv-rag.db`;
 
 const BatchSizeFlagOption = { type: 'string' as const };
 const ConcurrencyFlagOption = { type: 'string' as const };
@@ -33,12 +41,20 @@ async function main() {
     strict: true,
   });
 
-  await runClustering({
+  const registry = await runClustering({
     inputPath: `${DATA_DIR}/unique-locations.json`,
     outputPath: `${DATA_DIR}/location-registry.json`,
-    dbPath: `${DATA_DIR}/hv-rag.db`,
-    dbQuery: 'SELECT locations FROM videos UNION SELECT locations FROM scenes',
-    dbColumn: 'locations',
+    dbPath: DB_PATH,
+    dbQuery: `
+      SELECT
+        raw_text AS value,
+        GROUP_CONCAT(SUBSTR(evidence_text, 1, 120), ' | ') AS context
+      FROM chunk_entity_mentions
+      WHERE entity_type IN ('PLACE', 'SETTING')
+      GROUP BY raw_text
+    `,
+    dbValueColumn: 'value',
+    dbContextColumn: 'context',
     categoryFallback: 'SETTING',
     validCategories: ['PLACE', 'SETTING', 'DISCARD'],
     schema: LocationClusteringSchema,
@@ -47,6 +63,74 @@ async function main() {
     batchSize: parseBatchSizeFlag(values['batch-size']),
     concurrency: parseConcurrencyFlag(values['concurrency']),
   });
+
+  const db = createDb(DB_PATH);
+
+  const normalizeKey = (value: string): string =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9\s'-]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  let applied = 0;
+
+  for (const [rawText, entry] of Object.entries(registry)) {
+    if (entry.category === 'DISCARD') continue;
+    const canonical = entry.canonical.trim();
+    if (!canonical) continue;
+
+    const [entity] = await db
+      .insert(entities)
+      .values({
+        name: canonical,
+        entityType: entry.category,
+        subtype: null,
+        normalizedKey: normalizeKey(canonical),
+      })
+      .onConflictDoUpdate({
+        target: entities.name,
+        set: {
+          entityType: entry.category,
+          subtype: null,
+          normalizedKey: normalizeKey(canonical),
+        },
+      })
+      .returning();
+
+    const normalizedRaw = normalizeKey(rawText);
+
+    await db
+      .insert(entityVariants)
+      .values({
+        entityId: entity.id,
+        rawText,
+        normalizedRaw,
+        source: 'mention',
+      })
+      .onConflictDoUpdate({
+        target: entityVariants.rawText,
+        set: {
+          entityId: entity.id,
+          normalizedRaw,
+          source: 'mention',
+        },
+      });
+
+    await db
+      .update(chunkEntityMentions)
+      .set({ entityId: entity.id })
+      .where(
+        and(
+          eq(chunkEntityMentions.rawText, rawText),
+          inArray(chunkEntityMentions.entityType, ['PLACE', 'SETTING']),
+        ),
+      );
+
+    applied++;
+  }
+
+  logger.info({ applied }, 'Applied location canonicalization');
 }
 
 main().catch((err) => {

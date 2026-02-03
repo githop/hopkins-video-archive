@@ -1,12 +1,7 @@
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createDb } from '@hop-hv-rag/db';
-import {
-  ParticipantService,
-  LocationService,
-  ActivityService,
-  logger,
-} from '@hop-hv-rag/core';
+import { logger } from '@hop-hv-rag/core';
 import { FamilyArchivist } from './src/archivist';
 import {
   getGenModel,
@@ -64,25 +59,12 @@ async function runEval() {
   // Set up services
   const DATA_DIR = join(import.meta.dir, '../../data');
   const db = createDb(join(DATA_DIR, 'hv-rag.db'));
-  const participantService = new ParticipantService(
-    join(DATA_DIR, 'participant-registry.json'),
-  );
-  const locationService = new LocationService(
-    join(DATA_DIR, 'location-registry.json'),
-  );
-  const activityService = new ActivityService(
-    join(DATA_DIR, 'activity-registry.json'),
-  );
-
   // Initialize the archivist once
   const archivist = new FamilyArchivist(
     getGenModel(modelConfig.generation),
     getEmbedModel(modelConfig.embedding),
     getRerankModel(modelConfig.reranking),
     db,
-    participantService,
-    locationService,
-    activityService,
   );
   await archivist.init();
 

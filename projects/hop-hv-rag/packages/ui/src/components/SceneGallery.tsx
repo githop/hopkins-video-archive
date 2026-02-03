@@ -1,9 +1,9 @@
 import React from 'react';
 import { SceneCard } from './SceneCard';
-import type { SceneResult } from '@hop-hv-rag/search';
+import type { ChunkResult } from '@hop-hv-rag/search';
 
 interface SceneGalleryProps {
-  results: SceneResult[];
+  results: ChunkResult[];
 }
 
 export const SceneGallery: React.FC<SceneGalleryProps> = ({ results }) => {

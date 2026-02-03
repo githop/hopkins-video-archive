@@ -22,7 +22,7 @@ export function VideoModal({ source, isOpen, onClose }: VideoModalProps) {
 
   if (!isOpen || !source) return null;
 
-  const { video, timestamp, sceneTitle } = source;
+  const { video, timestamp, chunkTitle } = source;
 
   // Compute transcript URL from video filename
   const baseFilename = video.filename.replace(/\.[^/.]+$/, '');
@@ -41,7 +41,7 @@ export function VideoModal({ source, isOpen, onClose }: VideoModalProps) {
         <div className="flex justify-between items-center p-4 bg-gray-900">
           <div>
             <h3 className="text-white font-medium">
-              {sceneTitle || video.title}
+              {chunkTitle || video.title}
             </h3>
             <p className="text-gray-400 text-sm">
               Starting at {timestamp.formatted}

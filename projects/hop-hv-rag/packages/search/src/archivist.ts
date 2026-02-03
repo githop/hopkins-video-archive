@@ -1,22 +1,14 @@
-import { sql, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
 import {
-  people,
-  locations as LocationsRecord,
-  activities as ActivitiesRecord,
-  sceneToPeople,
-  sceneToLocations,
-  sceneToActivities,
+  chunkEntities,
+  entities,
+  entityVariants,
   videos,
   type schema,
 } from '@hop-hv-rag/db';
-import { validateSceneEntities } from '@hop-hv-rag/db/validation';
-import {
-  ParticipantService,
-  LocationService,
-  ActivityService,
-  logger,
-} from '@hop-hv-rag/core';
+import { validateEntities } from '@hop-hv-rag/db/validation';
+import { logger } from '@hop-hv-rag/core';
 import {
   streamText,
   embed,
@@ -30,6 +22,81 @@ import { type Source, type StreamChunk } from './schemas.ts';
 
 type Db = BunSQLiteDatabase<typeof schema>;
 
+interface EntityMatch {
+  id: number;
+  name: string;
+  entityType: string;
+  subtype: string | null;
+}
+
+class EntityIndex {
+  private terms: Array<{ term: string; entityId: number }> = [];
+  private entityById = new Map<number, EntityMatch>();
+  private loaded = false;
+
+  async load(db: Db) {
+    const entityRows = db
+      .select({
+        id: entities.id,
+        name: entities.name,
+        entityType: entities.entityType,
+        subtype: entities.subtype,
+      })
+      .from(entities)
+      .all();
+
+    const variantRows = db
+      .select({
+        entityId: entityVariants.entityId,
+        rawText: entityVariants.rawText,
+      })
+      .from(entityVariants)
+      .all();
+
+    const termMap = new Map<string, number>();
+
+    for (const row of entityRows) {
+      this.entityById.set(row.id, row);
+      termMap.set(row.name, row.id);
+    }
+
+    for (const row of variantRows) {
+      termMap.set(row.rawText, row.entityId);
+    }
+
+    this.terms = Array.from(termMap.entries())
+      .map(([term, entityId]) => ({ term, entityId }))
+      .sort((a, b) => b.term.length - a.term.length);
+
+    this.loaded = true;
+  }
+
+  detect(query: string): EntityMatch[] {
+    if (!this.loaded) return [];
+
+    const lowerQuery = query.toLowerCase();
+    const detectedIds = new Set<number>();
+    const shortAllowList = new Set(['al', 'jo', 'ty']);
+
+    for (const entry of this.terms) {
+      if (
+        entry.term.length < 3 &&
+        !shortAllowList.has(entry.term.toLowerCase())
+      ) {
+        continue;
+      }
+
+      if (lowerQuery.includes(entry.term.toLowerCase())) {
+        detectedIds.add(entry.entityId);
+      }
+    }
+
+    return Array.from(detectedIds)
+      .map((id) => this.entityById.get(id))
+      .filter((entry): entry is EntityMatch => entry !== undefined);
+  }
+}
+
 /**
  * FamilyArchivist: Handles hybrid search and RAG synthesis with unified streaming API.
  */
@@ -39,17 +106,12 @@ export class FamilyArchivist {
     private embedModel: EmbeddingModel,
     private rerankModel: RerankingModel,
     private db: Db,
-    private participantService: ParticipantService,
-    private locationService: LocationService,
-    private activityService: ActivityService,
   ) {}
 
+  private entityIndex = new EntityIndex();
+
   async init() {
-    await Promise.all([
-      this.participantService.load(),
-      this.locationService.load(),
-      this.activityService.load(),
-    ]);
+    await this.entityIndex.load(this.db);
   }
 
   /**
@@ -57,7 +119,7 @@ export class FamilyArchivist {
    * Yields reasoning chunks during model thinking, then a final result chunk.
    */
   async *query(userQuery: string): AsyncGenerator<StreamChunk> {
-    // 1. Retrieve relevant scenes
+    // 1. Retrieve relevant chunks
     const results = await this.retrieve(userQuery);
 
     const sources = results ? await this.buildSources(results) : [];
@@ -67,7 +129,7 @@ export class FamilyArchivist {
       yield {
         type: 'result',
         answer:
-          "I couldn't find any relevant scenes in the family archive for that query.",
+          "I couldn't find any relevant chunks in the family archive for that query.",
         sources: [],
         usedSourceIds: [],
       };
@@ -117,44 +179,19 @@ export class FamilyArchivist {
     const sources: Source[] = [];
 
     for (const [index, r] of results.entries()) {
-      // Fetch canonical entities from junction tables
-      const participantRows = this.db
+      const entityRows = this.db
         .select({
-          id: people.id,
-          name: people.name,
-          type: people.type,
+          id: entities.id,
+          name: entities.name,
+          entityType: entities.entityType,
+          subtype: entities.subtype,
         })
-        .from(people)
-        .innerJoin(sceneToPeople, sql`${sceneToPeople.personId} = ${people.id}`)
-        .where(sql`${sceneToPeople.sceneId} = ${r.id}`)
-        .all();
-
-      const locationRows = this.db
-        .select({
-          id: LocationsRecord.id,
-          name: LocationsRecord.name,
-          type: LocationsRecord.type,
-        })
-        .from(LocationsRecord)
+        .from(entities)
         .innerJoin(
-          sceneToLocations,
-          sql`${sceneToLocations.locationId} = ${LocationsRecord.id}`,
+          chunkEntities,
+          sql`${chunkEntities.entityId} = ${entities.id}`,
         )
-        .where(sql`${sceneToLocations.sceneId} = ${r.id}`)
-        .all();
-
-      const activityRows = this.db
-        .select({
-          id: ActivitiesRecord.id,
-          name: ActivitiesRecord.name,
-          type: ActivitiesRecord.type,
-        })
-        .from(ActivitiesRecord)
-        .innerJoin(
-          sceneToActivities,
-          sql`${sceneToActivities.activityId} = ${ActivitiesRecord.id}`,
-        )
-        .where(sql`${sceneToActivities.sceneId} = ${r.id}`)
+        .where(sql`${chunkEntities.chunkId} = ${r.id}`)
         .all();
 
       // Fetch global summary for the parent video
@@ -164,31 +201,34 @@ export class FamilyArchivist {
         .where(sql`${videos.id} = ${r.videoId}`)
         .get();
 
-      // Validate all entities using centralized helper
-      const { participants, locations, activities } = validateSceneEntities({
-        participants: participantRows,
-        locations: locationRows,
-        activities: activityRows,
-      });
+      const allEntities = validateEntities(entityRows);
+      const participants = allEntities.filter(
+        (entity) =>
+          entity.entityType === 'PERSON' || entity.entityType === 'ROLE',
+      );
+      const locations = allEntities.filter(
+        (entity) =>
+          entity.entityType === 'PLACE' || entity.entityType === 'SETTING',
+      );
+      const activities = allEntities.filter(
+        (entity) => entity.entityType === 'ACTIVITY',
+      );
 
       // Format timestamp
       const minutes = Math.floor(r.startTime / 60);
       const seconds = Math.floor(r.startTime % 60);
       const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-      // Build thumbnail URL with /thumbnails prefix
-      const thumbnailUrl = r.thumbnailPath
-        ? `/thumbnails${r.thumbnailPath}`
-        : '';
+      const thumbnailUrl = this.buildThumbnailUrl(r.videoFilename, r.startTime);
 
       // Build video URL with timestamp for streaming
       const videoUrl = `/videos/${r.videoFilename}#t=${Math.floor(r.startTime)}`;
 
       sources.push({
-        sceneId: r.id,
+        chunkId: r.id,
         citationId: index + 1, // Assign [1], [2], [3], etc.
-        sceneTitle: r.title,
-        summary: r.summary,
+        chunkTitle: r.title,
+        summary: r.summary ?? 'No summary available.',
         thumbnailUrl,
         video: {
           id: r.videoId,
@@ -216,10 +256,10 @@ export class FamilyArchivist {
 
   /**
    * Convert structured Source[] to text for the LLM system prompt.
-   * Includes global video summaries (deduplicated) before individual scene sources.
+   * Includes global video summaries (deduplicated) before individual chunk sources.
    */
   private formatContextForLLM(sources: Source[]): string {
-    if (sources.length === 0) return 'No relevant scenes found.';
+    if (sources.length === 0) return 'No relevant chunks found.';
 
     // Extract unique global summaries by video
     const globalSummaries = new Map<
@@ -246,8 +286,8 @@ export class FamilyArchivist {
       context += '---\n\n';
     }
 
-    // Format individual scene sources
-    const sceneContext = sources
+    // Format individual chunk sources
+    const chunkContext = sources
       .map((s) => {
         const participantNames =
           s.participants.map((p) => p.name).join(', ') || 'None identified';
@@ -262,7 +302,7 @@ export class FamilyArchivist {
           `FILENAME: ${s.video.filename}`,
           `YEAR: ${s.video.year || 'Unknown'}`,
           `TIMESTAMP: ${s.timestamp.formatted}`,
-          `SCENE: ${s.sceneTitle}`,
+          `CHUNK: ${s.chunkTitle || 'Untitled'}`,
           `PARTICIPANTS: ${participantNames}`,
           `LOCATIONS: ${locationNames}`,
           `ACTIVITIES: ${activityNames}`,
@@ -272,7 +312,21 @@ export class FamilyArchivist {
       })
       .join('\n\n');
 
-    return context + sceneContext;
+    return context + chunkContext;
+  }
+
+  private buildThumbnailUrl(videoFilename: string, startTime: number): string {
+    const videoFolder = videoFilename.replace(/\.[^/.]+$/, '');
+    const timestampPadded = Math.floor(startTime).toString().padStart(5, '0');
+    return `/thumbnails/${videoFolder}/${timestampPadded}.jpg`;
+  }
+
+  private extractTranscriptSnippet(text: string): string {
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    if (normalized.length <= 360) return normalized;
+    const head = normalized.slice(0, 240).trim();
+    const tail = normalized.slice(-90).trim();
+    return `${head} ... ${tail}`;
   }
 
   /**
@@ -311,89 +365,30 @@ export class FamilyArchivist {
   }
 
   /**
-   * Retrieve relevant scenes using hybrid search.
+   * Retrieve relevant chunks using hybrid search.
    */
   public async retrieve(query: string): Promise<HybridResult[] | null> {
-    // 1. Detect Entities in Query
-    const [detectedPeople, detectedLocations, detectedActivities] =
-      await Promise.all([
-        this.detectPeople(query),
-        this.detectLocations(query),
-        this.detectActivities(query),
-      ]);
+    const detectedEntities = this.entityIndex.detect(query);
 
-    if (detectedPeople.length > 0) {
+    if (detectedEntities.length > 0) {
       logger.debug(
-        { people: detectedPeople.map((p) => p.name) },
-        'Detected people in query',
-      );
-    }
-    if (detectedLocations.length > 0) {
-      logger.debug(
-        { locations: detectedLocations.map((l) => l.name) },
-        'Detected locations in query',
-      );
-    }
-    if (detectedActivities.length > 0) {
-      logger.debug(
-        { activities: detectedActivities.map((a) => a.name) },
-        'Detected activities in query',
+        { entities: detectedEntities.map((e) => e.name) },
+        'Detected entities in query',
       );
     }
 
     const results = await this.hybridSearch(
       query,
-      detectedPeople.map((p) => p.id),
-      detectedLocations.map((l) => l.id),
-      detectedActivities.map((a) => a.id),
+      detectedEntities.map((entity) => entity.id),
     );
 
     if (results.length === 0) {
       return null;
     }
 
-    logger.info({ sceneCount: results.length }, 'Found relevant scenes');
+    logger.info({ chunkCount: results.length }, 'Found relevant chunks');
 
     return results;
-  }
-
-  private async detectPeople(
-    query: string,
-  ): Promise<{ id: number; name: string }[]> {
-    const names = this.participantService.detectParticipants(query);
-    if (names.length === 0) return [];
-
-    return this.db
-      .select({ id: people.id, name: people.name })
-      .from(people)
-      .where(inArray(people.name, names))
-      .all();
-  }
-
-  private async detectLocations(
-    query: string,
-  ): Promise<{ id: number; name: string }[]> {
-    const names = this.locationService.detectLocations(query);
-    if (names.length === 0) return [];
-
-    return await this.db
-      .select({ id: LocationsRecord.id, name: LocationsRecord.name })
-      .from(LocationsRecord)
-      .where(inArray(LocationsRecord.name, names))
-      .all();
-  }
-
-  private async detectActivities(
-    query: string,
-  ): Promise<{ id: number; name: string }[]> {
-    const names = this.activityService.detectActivities(query);
-    if (names.length === 0) return [];
-
-    return await this.db
-      .select({ id: ActivitiesRecord.id, name: ActivitiesRecord.name })
-      .from(ActivitiesRecord)
-      .where(inArray(ActivitiesRecord.name, names))
-      .all();
   }
 
   /**
@@ -467,9 +462,7 @@ export class FamilyArchivist {
 
   private async hybridSearch(
     query: string,
-    personIds: number[],
-    locationIds: number[],
-    activityIds: number[],
+    entityIds: number[],
   ): Promise<HybridResult[]> {
     // 1. Vector Search
     const { embedding } = await embed({
@@ -480,29 +473,33 @@ export class FamilyArchivist {
 
     const vectorSql = `
       SELECT 
-        s.id,
-        s.video_id as videoId,
-        s.start_time as startTime,
-        s.end_time as endTime,
-        s.title,
-        s.summary,
-        s.transcript,
-        s.thumbnail_path as thumbnailPath,
+        c.id,
+        c.video_id as videoId,
+        c.start_time as startTime,
+        c.end_time as endTime,
+        c.text as text,
+        cs.title as title,
+        cs.summary as summary,
         v.title as videoTitle,
         v.year as videoYear,
         v.year_start as videoYearStart,
         v.year_end as videoYearEnd,
-        v.participants as videoParticipants,
-        v.locations as videoLocations,
         v.filename as videoFilename
       FROM (
-        SELECT rowid, vec_distance_cosine(scene_embedding, '${queryVecJson}') as distance
-        FROM vec_scenes
+        SELECT rowid, vec_distance_cosine(chunk_embedding, '${queryVecJson}') as distance
+        FROM vec_chunks
         ORDER BY distance ASC
         LIMIT 40
       ) m
-      JOIN scenes s ON s.id = m.rowid
-      JOIN videos v ON v.id = s.video_id
+      JOIN chunks c ON c.id = m.rowid
+      LEFT JOIN chunk_summaries cs ON cs.id = (
+        SELECT cs2.id
+        FROM chunk_summaries cs2
+        WHERE cs2.chunk_id = c.id AND cs2.summary_type = 'scene'
+        ORDER BY cs2.id DESC
+        LIMIT 1
+      )
+      JOIN videos v ON v.id = c.video_id
     `;
 
     const vectorResults = this.db.all<HybridResult>(sql.raw(vectorSql));
@@ -512,26 +509,30 @@ export class FamilyArchivist {
     const ftsResults = this.db.all<HybridResult>(
       sql.raw(`
       SELECT 
-        s.id,
-        s.video_id as videoId,
-        s.start_time as startTime,
-        s.end_time as endTime,
-        s.title,
-        s.summary,
-        s.transcript,
-        s.thumbnail_path as thumbnailPath,
+        c.id,
+        c.video_id as videoId,
+        c.start_time as startTime,
+        c.end_time as endTime,
+        c.text as text,
+        cs.title as title,
+        cs.summary as summary,
         v.title as videoTitle,
         v.year as videoYear,
         v.year_start as videoYearStart,
         v.year_end as videoYearEnd,
-        v.participants as videoParticipants,
-        v.locations as videoLocations,
         v.filename as videoFilename
-      FROM fts_scenes f
-      JOIN scenes s ON s.id = f.id
-      JOIN videos v ON v.id = s.video_id
-      WHERE fts_scenes MATCH '${ftsQuery.replace(/'/g, "''")}'
-      ORDER BY bm25(fts_scenes)
+      FROM fts_chunks f
+      JOIN chunks c ON c.id = f.rowid
+      LEFT JOIN chunk_summaries cs ON cs.id = (
+        SELECT cs2.id
+        FROM chunk_summaries cs2
+        WHERE cs2.chunk_id = c.id AND cs2.summary_type = 'scene'
+        ORDER BY cs2.id DESC
+        LIMIT 1
+      )
+      JOIN videos v ON v.id = c.video_id
+      WHERE fts_chunks MATCH '${ftsQuery.replace(/'/g, "''")}'
+      ORDER BY bm25(fts_chunks)
       LIMIT 40
     `),
     );
@@ -543,10 +544,10 @@ export class FamilyArchivist {
     const { ranking } = await rerank({
       model: this.rerankModel,
       query,
-      documents: fused.map(
-        (r) =>
-          `SCENE: ${r.title}\nSUMMARY: ${r.summary}\nTRANSCRIPT: ${r.transcript}`,
-      ),
+      documents: fused.map((r) => {
+        const snippet = this.extractTranscriptSnippet(r.text);
+        return `CHUNK: ${r.title || 'Untitled'}\nSUMMARY: ${r.summary || ''}\nTRANSCRIPT: ${snippet}`;
+      }),
     });
 
     // Apply reranked scores
@@ -560,7 +561,7 @@ export class FamilyArchivist {
     if (keyTerms.length > 0) {
       const KEYWORD_BOOST = 1.3;
       for (const result of fused) {
-        const content = `${result.title} ${result.summary} ${result.transcript}`;
+        const content = `${result.title || ''} ${result.summary || ''} ${result.text}`;
         if (this.contentContainsKeyTerms(content, keyTerms)) {
           result.score = (result.score || 0) * KEYWORD_BOOST;
         }
@@ -570,49 +571,24 @@ export class FamilyArchivist {
     // Sort by boosted scores
     fused.sort((a, b) => (b.score || 0) - (a.score || 0));
 
-    // 6. Additional boost for detected people, locations, and activities
-    if (
-      personIds.length > 0 ||
-      locationIds.length > 0 ||
-      activityIds.length > 0
-    ) {
+    // 6. Additional boost for detected entities
+    if (entityIds.length > 0) {
       for (const result of fused) {
         let boost = 1.0;
 
-        if (personIds.length > 0) {
-          const scenePeople = this.db
-            .select({ personId: sceneToPeople.personId })
-            .from(sceneToPeople)
-            .where(sql`${sceneToPeople.sceneId} = ${result.id}`)
-            .all();
-          const hasPerson = scenePeople.some((sp: { personId: number }) =>
-            personIds.includes(sp.personId),
-          );
-          if (hasPerson) boost *= 1.5;
-        }
+        const matchedEntities = this.db
+          .select({ entityId: chunkEntities.entityId })
+          .from(chunkEntities)
+          .where(
+            and(
+              eq(chunkEntities.chunkId, result.id),
+              inArray(chunkEntities.entityId, entityIds),
+            ),
+          )
+          .all();
 
-        if (locationIds.length > 0) {
-          const sceneLocations = this.db
-            .select({ locationId: sceneToLocations.locationId })
-            .from(sceneToLocations)
-            .where(sql`${sceneToLocations.sceneId} = ${result.id}`)
-            .all();
-          const hasLocation = sceneLocations.some(
-            (sl: { locationId: number }) => locationIds.includes(sl.locationId),
-          );
-          if (hasLocation) boost *= 1.5;
-        }
-
-        if (activityIds.length > 0) {
-          const sceneActivities = this.db
-            .select({ activityId: sceneToActivities.activityId })
-            .from(sceneToActivities)
-            .where(sql`${sceneToActivities.sceneId} = ${result.id}`)
-            .all();
-          const hasActivity = sceneActivities.some(
-            (sa: { activityId: number }) => activityIds.includes(sa.activityId),
-          );
-          if (hasActivity) boost *= 1.5;
+        if (matchedEntities.length > 0) {
+          boost *= 1.5;
         }
 
         if (result.score) {

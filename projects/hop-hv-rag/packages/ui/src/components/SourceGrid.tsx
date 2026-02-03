@@ -34,7 +34,7 @@ export function SourceGrid({ sources, usedSourceIds }: SourceGridProps) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {sortedSources.map((source) => (
           <VideoCard
-            key={source.sceneId}
+            key={source.chunkId}
             source={source}
             isUsed={usedSourceIds.includes(source.citationId)}
           />

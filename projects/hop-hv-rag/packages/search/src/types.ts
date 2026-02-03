@@ -1,22 +1,23 @@
-import type { Scene } from '@hop-hv-rag/db/schema';
-
-export interface HybridResult extends Scene {
-  videoTitle: string;
-  videoYear: number;
+export interface HybridResult {
+  id: number;
+  videoId: number;
+  startTime: number;
+  endTime: number;
+  text: string;
+  title: string | null;
+  summary: string | null;
+  videoTitle: string | null;
+  videoYear: number | null;
   videoYearStart: number | null;
   videoYearEnd: number | null;
-  videoParticipants: string;
-  videoLocations: string;
   videoFilename: string;
-  canonicalParticipants?: string;
-  canonicalLocations?: string;
   score?: number;
 }
 
-export interface SceneResult {
+export interface ChunkResult {
   id: number;
   title: string | null;
-  videoTitle: string;
+  videoTitle: string | null;
   videoYear: number | null;
   filename: string;
   startTime: number;

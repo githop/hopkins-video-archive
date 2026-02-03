@@ -1,4 +1,10 @@
-import { createDb, videos, scenes, type Video } from '@hop-hv-rag/db';
+import {
+  createDb,
+  videos,
+  chunks,
+  chunkSummaries,
+  type Video,
+} from '@hop-hv-rag/db';
 import { getGenModel } from '@hop-hv-rag/ai';
 import {
   generateText,
@@ -6,7 +12,7 @@ import {
   NoObjectGeneratedError,
   type LanguageModel,
 } from 'ai';
-import { eq, like, isNull } from 'drizzle-orm';
+import { and, desc, eq, like, isNull } from 'drizzle-orm';
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { logger } from '@hop-hv-rag/core';
@@ -55,20 +61,56 @@ async function extractTemporalMetadata(
   model: LanguageModel,
   video: Video,
 ): Promise<void> {
-  // 1. Fetch all scenes for this video
-  const videoScenes = db
-    .select({ title: scenes.title, summary: scenes.summary })
-    .from(scenes)
-    .where(eq(scenes.videoId, video.id))
+  const summaryRows = db
+    .select({
+      chunkId: chunkSummaries.chunkId,
+      title: chunkSummaries.title,
+      summary: chunkSummaries.summary,
+      startTime: chunks.startTime,
+    })
+    .from(chunkSummaries)
+    .innerJoin(chunks, eq(chunkSummaries.chunkId, chunks.id))
+    .where(
+      and(
+        eq(chunks.videoId, video.id),
+        eq(chunkSummaries.summaryType, 'scene'),
+      ),
+    )
+    .orderBy(desc(chunkSummaries.id))
     .all();
 
-  if (videoScenes.length === 0) {
-    logger.info({ filename: video.filename }, 'No scenes found, skipping');
+  const latestByChunk = new Map<
+    number,
+    {
+      title: string;
+      summary: string;
+      startTime: number;
+    }
+  >();
+
+  for (const row of summaryRows) {
+    if (!latestByChunk.has(row.chunkId)) {
+      latestByChunk.set(row.chunkId, {
+        title: row.title,
+        summary: row.summary,
+        startTime: row.startTime,
+      });
+    }
+  }
+
+  const summaries = Array.from(latestByChunk.values()).sort(
+    (a, b) => a.startTime - b.startTime,
+  );
+
+  if (summaries.length === 0) {
+    logger.info(
+      { filename: video.filename },
+      'No chunk summaries found, skipping',
+    );
     return;
   }
 
-  // 2. Build scene context for LLM
-  const sceneContext = videoScenes
+  const chunkContext = summaries
     .map((s) => `- ${s.title}: ${s.summary}`)
     .join('\n');
 
@@ -84,7 +126,7 @@ async function extractTemporalMetadata(
       output: Output.object({
         schema: TemporalExtractionSchema,
       }),
-      prompt: getTemporalExtractionPrompt(video.filename, sceneContext),
+      prompt: getTemporalExtractionPrompt(video.filename, chunkContext),
     });
 
     // 4. Skip low confidence results

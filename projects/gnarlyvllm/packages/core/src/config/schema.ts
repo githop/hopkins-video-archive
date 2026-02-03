@@ -25,6 +25,9 @@ export const ModelDefaultsSchema = z.object({
   enable_tool_calling: z.boolean().optional(),
   tool_call_parser: z.string().optional(),
   reasoning_parser: z.string().optional(),
+  enable_expert_parallel: z.boolean().optional(),
+  swap_space: z.number().int().positive().optional(),
+  max_seq_len_to_capture: z.number().int().positive().optional(),
   max_num_seqs: z.number().int().positive().optional(),
   max_num_batched_tokens: z.number().int().positive().optional(),
   num_scheduler_steps: z.number().int().positive().optional(),
@@ -78,6 +81,9 @@ export type ResolvedModelConfig = ModelConfig & {
   enable_tool_calling?: boolean;
   tool_call_parser?: string;
   reasoning_parser?: string;
+  enable_expert_parallel?: boolean;
+  swap_space?: number;
+  max_seq_len_to_capture?: number;
   max_num_seqs?: number;
   max_num_batched_tokens?: number;
   num_scheduler_steps?: number;

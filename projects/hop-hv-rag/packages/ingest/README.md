@@ -1,149 +1,158 @@
 # Ingest Pipeline (`@hop-hv-rag/ingest`)
 
-This package contains the ingestion pipeline for `hop-hv-rag`, responsible for transforming raw video transcriptions into a semantically indexed database.
+This package contains the chunk-centric ingestion pipeline for `hop-hv-rag`. The workflow is fully decoupled and resumable: chunking, summarization, entity extraction, clustering, and indexing are independent steps.
+
+LLM-dependent stages are **explicit CLI commands** and are never run automatically.
 
 ## Overview
 
-The pipeline processes WhisperX JSON transcriptions, extracts semantic scenes using vLLM, generates hierarchical summaries (scene-level and video-level), and creates vector embeddings for semantic search.
+Pipeline stages:
+
+1. **Chunking** (no LLM) - create adaptive transcript chunks.
+2. **Chunk Summaries** (LLM) - generate titles and summaries per chunk.
+3. **Entity Extraction** (LLM) - evidence-grounded entity mentions per chunk.
+4. **Clustering / Canonicalization** (LLM) - normalize mentions into canonical entities.
+5. **Materialize Links** (no LLM) - build chunk_entities and video_entities.
+6. **Indexing** (no LLM + embedding model) - FTS rebuild + chunk embeddings.
+7. **Optional**: Global video summaries and temporal metadata.
 
 ## Recommended Workflow
 
-To process a new set of transcripts from scratch, follow these stages in order:
+Run these steps in order when ingesting a fresh library:
 
-### 1. Database Initialization
-
-Prepare the SQLite database and the vector extension.
+### 1. Initialize database + vectors
 
 ```bash
 bun run init-db
 bun run init-vec
 ```
 
-### 2. Seeding Data
-
-Load raw transcript files and the filename-to-ID mapping into the database.
+### 2. Seed videos + transcripts
 
 ```bash
 bun run seed
 ```
 
-### 3. Scene Extraction & Summarization
-
-Process transcripts through the LLM to identify logical scene boundaries and generate summaries.
+### 3. Chunk transcripts (no LLM)
 
 ```bash
-bun run summarize --all
+bun run ingest:chunk --all
 ```
 
-### 4. Temporal Metadata Extraction
+Defaults:
 
-Extract year ranges from video filenames and scene content using AI. This populates the `year_start` and `year_end` columns for temporal search filtering.
+- targetDurationSec=120, maxDurationSec=180, minDurationSec=45
+- overlapSec=15, maxWords=350, gapSec=4
+
+### 4. Summarize chunks (LLM)
+
+Interleaved global queue with TUI for max throughput. Use `--verbose` to disable the TUI.
 
 ```bash
-bun run ingest:temporal --all
+bun run ingest:summarize-chunks --all --concurrency 16
 ```
 
-**Options:**
-
-- `--all`: Process all videos without year data
-- `--file <filename>`: Process a specific video file
-- `--force`: Re-process videos that already have year data
-- `--model <model>`: Choose AI model (default: `summarizer-bulk`)
-- `--concurrency <n>`: Parallel requests (default: 16)
-
-### 5. Entity Normalization (Participants & Locations)
-
-Cluster raw mentions into a canonical registry and then migrate them to relational tables.
+### 5. Extract entities (LLM)
 
 ```bash
-# For participants
+bun run ingest:extract-entities --all --batch-size 50 --concurrency 8
+```
+
+### 6. Cluster and canonicalize entities (LLM)
+
+These commands write canonical entities + variants and update `chunk_entity_mentions.entity_id`.
+
+```bash
 bun run cluster-participants
-bun run migrate-participants
-
-# For locations
 bun run cluster-locations
-bun run migrate-locations
+bun run cluster-activities
 ```
 
-### 6. Global Video Summarization
+### 7. Materialize entity links (no LLM)
 
-Generate holistic "Archival Abstracts" for each video by synthesizing its scene summaries. These provide big-picture context for RAG queries.
+```bash
+bun run ingest:materialize-entities
+```
+
+### 8. Rebuild FTS for chunks (no LLM)
+
+```bash
+bun run ingest:rebuild-fts-chunks
+```
+
+### 9. Embed chunks (embedding model)
+
+```bash
+bun run ingest:embed-chunks --all --summary-type scene
+```
+
+### 10. Optional: Global summaries (LLM)
 
 ```bash
 bun run ingest:global --all
 ```
 
-### 7. Vector Indexing
-
-Generate and store embeddings for both scene summaries and global video summaries to enable semantic search at multiple granularities.
+### 11. Optional: Temporal metadata (LLM)
 
 ```bash
-# Embed individual scenes
-bun run embed --all
+bun run ingest:temporal --all
+```
 
-# Embed global video summaries
+### 12. Optional: Embed global video summaries
+
+```bash
 bun run embed-videos --all
 ```
 
+## Resumability
+
+Most LLM stages track `run_id` and `prompt_hash` for safe retries. If you want consistent resumability, pass a stable `--run-id` or reuse the same prompt hash (defaults to prompt hash when run-id is omitted).
+
 ## Resetting the Database
 
-To completely reset the archive and start fresh from raw transcripts:
+To wipe the DB and start fresh (from this package directory):
 
 ```bash
-# From the project root - this deletes the database and all registries
-bun run ingest:reset
-
-# Then re-run the full workflow
-bun run ingest:summarize --all
-bun run ingest:temporal --all
-bun run ingest:global --all
-bun run ingest:cluster-participants
-bun run ingest:migrate-participants
-bun run ingest:cluster-locations
-bun run ingest:migrate-locations
-bun run ingest:cluster-activities
-bun run ingest:migrate-activities
-bun run ingest:embed --all
-bun run ingest:embed-videos --all
+bun run clean
 ```
 
-**Warning**: The reset command deletes `data/hv-rag.db` and all `*-registry.json` files. This action cannot be undone. Always backup important data first.
+This deletes `data/hv-rag.db` and registry artifacts (if present). `mapping.json` is preserved.
 
 ## Command Reference
 
-| Command                | Description                                                                  |
-| :--------------------- | :--------------------------------------------------------------------------- |
-| `init-db`              | Initializes the core SQLite tables and FTS5 search indexes.                  |
-| `init-vec`             | Initializes the `sqlite-vec` virtual table for vector embeddings.            |
-| `seed`                 | Imports `data/transcripts/*.json` and `data/mapping.json` into the DB.       |
-| `summarize`            | Uses AI to divide transcripts into scenes with titles and summaries.         |
-| `ingest:temporal`      | Extracts year ranges from filenames and scene content using AI.              |
-| `cluster-participants` | AI-driven clustering of participant names into `participant-registry.json`.  |
-| `migrate-participants` | Populates relational tables from the participant registry.                   |
-| `cluster-locations`    | AI-driven clustering of locations into `location-registry.json`.             |
-| `migrate-locations`    | Populates relational tables from the location registry.                      |
-| `ingest:global`        | Generates global "Archival Abstracts" for videos from their scene summaries. |
-| `embed`                | Vectorizes scene summaries using an embedding model.                         |
-| `embed-videos`         | Vectorizes global video summaries for hierarchical RAG.                      |
-| `backup`               | Creates a timestamped backup of the database and all registry files.         |
-| `clean`                | Removes temporary files and processed artifacts (keeps source transcripts).  |
-| `verify`               | Checks metadata consistency.                                                 |
-| `verify-scenes`        | Validates that all videos have processed scenes.                             |
+| Command                       | Description                                      |
+| :---------------------------- | :----------------------------------------------- |
+| `init-db`                     | Create core tables + FTS indexes.                |
+| `init-vec`                    | Create vector tables (vec0).                     |
+| `seed`                        | Load transcripts and metadata into the DB.       |
+| `ingest:chunk`                | Build adaptive transcript chunks.                |
+| `ingest:summarize-chunks`     | LLM chunk summaries (interleaved + TUI).         |
+| `ingest:extract-entities`     | LLM evidence-grounded mentions.                  |
+| `cluster-participants`        | Canonicalize PERSON/ROLE entities.               |
+| `cluster-locations`           | Canonicalize PLACE/SETTING entities.             |
+| `cluster-activities`          | Canonicalize ACTIVITY entities.                  |
+| `ingest:materialize-entities` | Build chunk_entities and video_entities.         |
+| `ingest:rebuild-fts-chunks`   | Rebuild FTS over chunks + summaries + entities.  |
+| `ingest:embed-chunks`         | Embed chunk text for vector search.              |
+| `ingest:global`               | LLM global video summaries from chunk summaries. |
+| `ingest:temporal`             | LLM temporal extraction from chunk summaries.    |
+| `embed-videos`                | Embed global video summaries.                    |
+| `backup`                      | Create a timestamped backup of DB + registries.  |
+| `clean`                       | Delete the DB and registry artifacts.            |
+| `verify`                      | Validate metadata consistency.                   |
 
-**Note**: The `ingest:reset` command is available from the project root (not this package) and performs a complete database wipe.
+## Common CLI Options
 
-## CLI Options
-
-Most scripts support the following arguments:
-
-- `--all`: Process all available videos/scenes.
-- `--file <filename>`: Process only the specified video file.
-- `--force`: Overwrite existing data/summaries.
-- `--concurrency <n>`: Number of parallel AI requests (default: 4).
+- `--all` or `--file <filename>`: Select videos to process.
+- `--force`: Re-process and overwrite existing rows.
+- `--concurrency <n>`: Parallel LLM requests (default varies by command).
+- `--batch-size <n>`: Batch size for LLM calls (where supported).
+- `--run-id <id>`: Deterministic run identifier for resumability.
+- `--summary-type <type>`: Summary flavor (default: `scene`).
 
 ## Requirements
 
-- **Transcripts**: Raw WhisperX JSON files in `data/transcripts/`.
-- **Mapping**: A `data/mapping.json` file linking filenames to cloud storage IDs.
-- **AI Service**: A running vLLM or compatible OpenAI API (defaults to `http://localhost:4000/v1`).
-- **SQLite**: The database is stored at `data/hv-rag.db`.
+- **Transcripts**: `data/transcripts/*.json` (WhisperX output).
+- **Mapping**: `data/mapping.json` for filename-to-ID mapping.
+- **AI Service**: vLLM / OpenAI-compatible API running locally.
+- **SQLite**: Database at `data/hv-rag.db`.

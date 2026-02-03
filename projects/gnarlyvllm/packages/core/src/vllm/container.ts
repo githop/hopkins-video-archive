@@ -108,6 +108,24 @@ export function buildVllmContainerOptions(
     command.push('--reasoning-parser', model.reasoning_parser);
   }
 
+  // Expert parallelism (required for some MoE models)
+  if (model.enable_expert_parallel) {
+    command.push('--enable-expert-parallel');
+  }
+
+  // Swap space (in GB)
+  if (model.swap_space !== undefined) {
+    command.push('--swap-space', model.swap_space.toString());
+  }
+
+  // Max sequence length to capture (usually matches max_model_len)
+  if (model.max_seq_len_to_capture !== undefined) {
+    command.push(
+      '--max-seq-len-to-capture',
+      model.max_seq_len_to_capture.toString(),
+    );
+  }
+
   // Throughput optimization flags
   if (model.max_num_seqs !== undefined) {
     command.push('--max-num-seqs', model.max_num_seqs.toString());

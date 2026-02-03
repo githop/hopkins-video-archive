@@ -11,6 +11,11 @@ interface ClassificationEntry {
   reasoning: string;
 }
 
+interface ItemWithContext {
+  value: string;
+  context?: string;
+}
+
 export interface ClusteringConfig<
   T extends z.ZodObject<{
     classifications: z.ZodArray<z.ZodObject<z.ZodRawShape>>;
@@ -20,7 +25,9 @@ export interface ClusteringConfig<
   outputPath: string;
   dbPath: string;
   dbQuery: string;
-  dbColumn: string;
+  dbColumn?: string;
+  dbValueColumn?: string;
+  dbContextColumn?: string;
   systemPrompt: string;
   schema: T;
   batchSize: number;
@@ -36,13 +43,15 @@ export async function runClustering<
   T extends z.ZodObject<{
     classifications: z.ZodArray<z.ZodObject<z.ZodRawShape>>;
   }>,
->(config: ClusteringConfig<T>) {
+>(config: ClusteringConfig<T>): Promise<Record<string, ClassificationEntry>> {
   const {
     inputPath,
     outputPath,
     dbPath,
     dbQuery,
     dbColumn,
+    dbValueColumn,
+    dbContextColumn,
     systemPrompt,
     schema,
     batchSize,
@@ -56,28 +65,85 @@ export async function runClustering<
 
   const db = createDb(dbPath);
 
-  // 1. Ensure unique items file exists
-  if (!(await Bun.file(inputPath).exists())) {
-    logger.info({ inputPath }, 'Generating unique items from database');
-    const results = db.all<Record<string, string>>(sql.raw(dbQuery));
-    const all = new Set<string>();
+  function mergeContext(existing: string | undefined, next: string): string {
+    if (!existing) return next;
+    if (existing.includes(next)) return existing;
+    const merged = `${existing} | ${next}`;
+    return merged.length > 320 ? existing : merged;
+  }
 
-    results.forEach((r) => {
+  function normalizeContext(
+    value: string | null | undefined,
+  ): string | undefined {
+    if (!value) return undefined;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  function buildItemsFromDb(): {
+    items: string[];
+    contextByItem: Map<string, string>;
+  } {
+    const results = db.all<Record<string, string | null>>(sql.raw(dbQuery));
+    const contextByItem = new Map<string, string>();
+
+    if (dbValueColumn) {
+      const values = new Set<string>();
+      results.forEach((row) => {
+        const rawValue = row[dbValueColumn];
+        if (!rawValue) return;
+        const value = rawValue.trim();
+        if (!value) return;
+        values.add(value);
+
+        if (dbContextColumn) {
+          const contextValue = normalizeContext(row[dbContextColumn]);
+          if (contextValue) {
+            const existing = contextByItem.get(value);
+            contextByItem.set(value, mergeContext(existing, contextValue));
+          }
+        }
+      });
+
+      return { items: Array.from(values).sort(), contextByItem };
+    }
+
+    if (!dbColumn) {
+      return { items: [], contextByItem };
+    }
+
+    const all = new Set<string>();
+    results.forEach((row) => {
+      const raw = row[dbColumn] ?? '';
+      if (!raw) return;
       try {
-        const parsed = JSON.parse(r[dbColumn] || '[]');
-        if (Array.isArray(parsed))
-          parsed.forEach((item: string) => all.add(item));
-      } catch (e) {
-        if (r[dbColumn]) all.add(r[dbColumn]);
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((item) => {
+            if (typeof item === 'string' && item.trim()) {
+              all.add(item.trim());
+            }
+          });
+        }
+      } catch {
+        if (raw.trim()) all.add(raw.trim());
       }
     });
 
-    await Bun.write(inputPath, JSON.stringify(Array.from(all).sort(), null, 2));
+    return { items: Array.from(all).sort(), contextByItem };
+  }
+
+  // 1. Ensure unique items file exists
+  if (!(await Bun.file(inputPath).exists())) {
+    logger.info({ inputPath }, 'Generating unique items from database');
+    const { items } = buildItemsFromDb();
+    await Bun.write(inputPath, JSON.stringify(items, null, 2));
   }
 
   // 2. Load data and existing registry
   const itemsFile = Bun.file(inputPath);
   const items = (await itemsFile.json()) as string[];
+  const { contextByItem } = buildItemsFromDb();
   logger.info({ count: items.length }, 'Loaded unique items');
 
   let registry: Record<string, ClassificationEntry> = {};
@@ -162,6 +228,13 @@ export async function runClustering<
       currentBatchIdx: number,
     ) => {
       const batchStartTime = Date.now();
+      const batchWithContext: ItemWithContext[] = currentBatch.map((item) => ({
+        value: item,
+        context: contextByItem.get(item),
+      }));
+      const batchLines = batchWithContext.map((entry) =>
+        entry.context ? `${entry.value} || ${entry.context}` : entry.value,
+      );
       const itemPreview =
         currentBatch.slice(0, 3).join(', ') +
         (currentBatch.length > 3 ? ` (+${currentBatch.length - 3} more)` : '');
@@ -179,7 +252,7 @@ export async function runClustering<
         const { output: classificationsOutput } = await generateText({
           model,
           system: systemPrompt,
-          prompt: `Items to classify (one per line):\n${currentBatch.join('\n')}`,
+          prompt: `Items to classify (one per line):\n${batchLines.join('\n')}`,
           output: Output.object({
             schema,
           }),
@@ -317,4 +390,6 @@ export async function runClustering<
       'All items processed successfully',
     );
   }
+
+  return registry;
 }
