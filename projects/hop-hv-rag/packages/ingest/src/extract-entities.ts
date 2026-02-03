@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
 import { join } from 'node:path';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, desc } from 'drizzle-orm';
 import {
   createDb,
   videos,
@@ -8,6 +8,7 @@ import {
   chunkSummaries,
   chunkEntityMentions,
   type Video,
+  type Chunk,
 } from '@hop-hv-rag/db';
 import { getGenModel } from '@hop-hv-rag/ai';
 import {
@@ -22,18 +23,16 @@ import {
   ChunkEntityExtractionSchema,
 } from './prompts.ts';
 import { GenModelFlagOption, parseGenModelFlag } from './cli-flags.ts';
+import { TUI } from './tui.ts';
 
 const DATA_DIR = join(import.meta.dir, '../../../data');
 const DB_PATH = join(DATA_DIR, 'hv-rag.db');
 
-interface ChunkEntityRow {
-  id: number;
-  videoId: number;
-  startTime: number;
-  endTime: number;
-  text: string;
-  videoTitle: string | null;
-  videoFilename: string;
+interface ChunkJob {
+  video: Video;
+  chunk: Chunk;
+  chunkIndex: number;
+  totalChunks: number;
   summary: string | null;
 }
 
@@ -46,6 +45,13 @@ interface MentionOutput {
   confidence: 'high' | 'medium' | 'low';
 }
 
+interface ProgressCallbacks {
+  onChunkComplete: (video: Video, mentionCount: number) => void;
+  onVideoComplete: (video: Video, totalMentions: number) => void;
+  onVideoError: (video: Video, error: string) => void;
+  onVideoWarning: (video: Video, message: string) => void;
+}
+
 async function hashText(value: string): Promise<string> {
   const data = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest('SHA-256', data);
@@ -54,38 +60,184 @@ async function hashText(value: string): Promise<string> {
     .join('');
 }
 
-function isValidMention(row: ChunkEntityRow, mention: MentionOutput): boolean {
+function isValidMention(chunk: Chunk, mention: MentionOutput): boolean {
+  // 1. Time bounds check
+  if (mention.start_time < chunk.startTime || mention.end_time > chunk.endTime)
+    return false;
+  if (mention.end_time < mention.start_time) return false;
+
   const evidence = mention.evidence_text.trim();
   if (!evidence) return false;
-  if (!row.text.includes(evidence)) return false;
-  if (mention.start_time < row.startTime || mention.end_time > row.endTime)
-    return false;
-  if (mention.end_time <= mention.start_time) return false;
-  return true;
+
+  // 2. Strict containment check (original)
+  if (chunk.text.includes(evidence)) return true;
+
+  // 3. Case-insensitive check
+  const textLower = chunk.text.toLowerCase();
+  const evidenceLower = evidence.toLowerCase();
+  if (textLower.includes(evidenceLower)) return true;
+
+  // 4. Punctuation-agnostic check (remove trailing punctuation)
+  const cleanEvidence = evidenceLower.replace(/[.,;!?]+$/, '');
+  if (textLower.includes(cleanEvidence)) return true;
+
+  return false;
 }
 
-class EntityExtractor {
+class JobPlanner {
+  constructor(
+    private db: ReturnType<typeof createDb>,
+    private summaryType: string,
+    private promptHash: string,
+    private runId: string,
+    private resumeAnyPrompt: boolean,
+  ) {}
+
+  async planJobs(
+    videosToProcess: Video[],
+    options: { force?: boolean },
+  ): Promise<{
+    jobs: ChunkJob[];
+    videosToProcess: Video[];
+    videosSkipped: Video[];
+  }> {
+    const jobs: ChunkJob[] = [];
+    const videosReady: Video[] = [];
+    const videosSkipped: Video[] = [];
+
+    for (const video of videosToProcess) {
+      const videoJobs = await this.planVideoJobs(video, options);
+
+      if (videoJobs.length === 0 && !options.force) {
+        videosSkipped.push(video);
+      } else {
+        videosReady.push(video);
+        jobs.push(...videoJobs);
+      }
+    }
+
+    return { jobs, videosToProcess: videosReady, videosSkipped };
+  }
+
+  private async planVideoJobs(
+    video: Video,
+    options: { force?: boolean },
+  ): Promise<ChunkJob[]> {
+    if (options.force) {
+      await this.deleteVideoMentions(video.id);
+    }
+
+    const allChunks = await this.db
+      .select()
+      .from(chunks)
+      .where(eq(chunks.videoId, video.id))
+      .orderBy(chunks.startTime);
+
+    if (allChunks.length === 0) {
+      return [];
+    }
+
+    const chunkIds = allChunks.map((chunk) => chunk.id);
+
+    // Fetch existing mentions to determine what's pending
+    const processedMentions = await this.db
+      .select({ chunkId: chunkEntityMentions.chunkId })
+      .from(chunkEntityMentions)
+      .where(
+        this.resumeAnyPrompt
+          ? and(
+              eq(chunkEntityMentions.runId, this.runId),
+              inArray(chunkEntityMentions.chunkId, chunkIds),
+            )
+          : and(
+              eq(chunkEntityMentions.runId, this.runId),
+              eq(chunkEntityMentions.promptHash, this.promptHash),
+              inArray(chunkEntityMentions.chunkId, chunkIds),
+            ),
+      );
+
+    const processedIds = new Set(processedMentions.map((row) => row.chunkId));
+    const pendingChunks = allChunks.filter(
+      (chunk) => !processedIds.has(chunk.id),
+    );
+
+    if (pendingChunks.length === 0) {
+      return [];
+    }
+
+    // Fetch summaries for pending chunks
+    const pendingChunkIds = pendingChunks.map((c) => c.id);
+    const summaryRows = await this.db
+      .select({
+        chunkId: chunkSummaries.chunkId,
+        summary: chunkSummaries.summary,
+      })
+      .from(chunkSummaries)
+      .where(
+        and(
+          eq(chunkSummaries.summaryType, this.summaryType),
+          inArray(chunkSummaries.chunkId, pendingChunkIds),
+        ),
+      )
+      .orderBy(desc(chunkSummaries.id));
+
+    const summaryMap = new Map<number, string>();
+    for (const row of summaryRows) {
+      if (!summaryMap.has(row.chunkId)) {
+        summaryMap.set(row.chunkId, row.summary);
+      }
+    }
+
+    const indexById = new Map<number, number>();
+    allChunks.forEach((chunk, index) => {
+      indexById.set(chunk.id, index);
+    });
+
+    return pendingChunks.map((chunk) => ({
+      video,
+      chunk,
+      chunkIndex: indexById.get(chunk.id) ?? 0,
+      totalChunks: allChunks.length,
+      summary: summaryMap.get(chunk.id) ?? null,
+    }));
+  }
+
+  private async deleteVideoMentions(videoId: number): Promise<void> {
+    const chunkRows = await this.db
+      .select({ id: chunks.id })
+      .from(chunks)
+      .where(eq(chunks.videoId, videoId));
+
+    const ids = chunkRows.map((row) => row.id);
+    if (ids.length === 0) return;
+
+    await this.db
+      .delete(chunkEntityMentions)
+      .where(inArray(chunkEntityMentions.chunkId, ids));
+  }
+}
+
+class ChunkEntityExtractor {
   constructor(
     private db: ReturnType<typeof createDb>,
     private model: LanguageModel,
   ) {}
 
-  async extractForChunk(
-    row: ChunkEntityRow,
+  async processChunkJob(
+    job: ChunkJob,
     promptHash: string,
     runId: string,
     modelName: string,
-  ) {
-    const summarySection = row.summary
-      ? `\nCHUNK SUMMARY:\n${row.summary}\n`
-      : '';
+  ): Promise<number> {
+    const { video, chunk, summary } = job;
+    const summarySection = summary ? `\nCHUNK SUMMARY:\n${summary}\n` : '';
 
-    const prompt = `VIDEO: ${row.videoTitle || row.videoFilename}
-FILENAME: ${row.videoFilename}
-TIME RANGE: ${row.startTime.toFixed(2)}s - ${row.endTime.toFixed(2)}s
+    const prompt = `VIDEO: ${video.title || video.filename}
+FILENAME: ${video.filename}
+TIME RANGE: ${chunk.startTime.toFixed(2)}s - ${chunk.endTime.toFixed(2)}s
 ${summarySection}
 TRANSCRIPT CHUNK:
-${row.text}`;
+${chunk.text}`;
 
     try {
       const { output } = await generateText({
@@ -94,6 +246,7 @@ ${row.text}`;
         output: Output.object({ schema: ChunkEntityExtractionSchema }),
         prompt,
         maxRetries: 3,
+        timeout: 5 * 60 * 1000,
       });
 
       const mentions: MentionOutput[] = output.mentions;
@@ -101,7 +254,7 @@ ${row.text}`;
       const seen = new Set<string>();
 
       for (const mention of mentions) {
-        if (!isValidMention(row, mention)) {
+        if (!isValidMention(chunk, mention)) {
           continue;
         }
 
@@ -116,45 +269,49 @@ ${row.text}`;
         });
       }
 
-      if (validMentions.length === 0) {
-        logger.info({ chunkId: row.id }, 'No valid mentions found');
-        return;
+      if (validMentions.length > 0) {
+        await this.db.insert(chunkEntityMentions).values(
+          validMentions.map((mention) => ({
+            chunkId: chunk.id,
+            entityType: mention.type,
+            rawText: mention.raw_text,
+            evidenceText: mention.evidence_text.trim(),
+            startTime: mention.start_time,
+            endTime: mention.end_time,
+            confidence: mention.confidence,
+            model: modelName,
+            promptHash,
+            runId,
+            entityId: null,
+          })),
+        );
       }
 
-      await this.db.insert(chunkEntityMentions).values(
-        validMentions.map((mention) => ({
-          chunkId: row.id,
-          entityType: mention.type,
-          rawText: mention.raw_text,
-          evidenceText: mention.evidence_text.trim(),
-          startTime: mention.start_time,
-          endTime: mention.end_time,
-          confidence: mention.confidence,
-          model: modelName,
-          promptHash,
-          runId,
-          entityId: null,
-        })),
-      );
-
       logger.info(
-        { chunkId: row.id, count: validMentions.length },
+        { chunkId: chunk.id, count: validMentions.length },
         '✅ Entity mentions saved',
       );
+
+      return validMentions.length;
     } catch (error: unknown) {
       if (NoObjectGeneratedError.isInstance(error)) {
         logger.warn(
-          { chunkId: row.id, text: error.text, response: error.response },
+          { chunkId: chunk.id, text: error.text, response: error.response },
           'No object generated - invalid JSON',
         );
-        return;
+        const err = new Error('AI failed to generate valid mentions');
+        (err as Error & { errorType?: string }).errorType = 'ai-parse';
+        throw err;
       }
 
       const message = error instanceof Error ? error.message : String(error);
       logger.error(
-        { chunkId: row.id, error: message },
+        { chunkId: chunk.id, error: message },
         'Entity extraction failed',
       );
+      const err = new Error(message);
+      (err as Error & { errorType?: string }).errorType = 'api';
+      throw err;
     }
   }
 }
@@ -169,18 +326,19 @@ async function main() {
       'gen-model': GenModelFlagOption,
       'run-id': { type: 'string' },
       'summary-type': { type: 'string', default: 'scene' },
-      'batch-size': { type: 'string', default: '50' },
+      'resume-any-prompt': { type: 'boolean', default: false },
       concurrency: { type: 'string', default: '8' },
+      verbose: { type: 'boolean', default: false },
     },
     strict: true,
   });
 
   const db = createDb(DB_PATH);
   const summaryType = String(values['summary-type']);
-  const batchSize = parseInt(String(values['batch-size']), 10);
-  const concurrency = parseInt(String(values.concurrency), 10);
   const promptHash = await hashText(CHUNK_ENTITY_EXTRACTION_PROMPT);
   const runId = values['run-id'] ? String(values['run-id']) : promptHash;
+  const maxConcurrency = parseInt(String(values.concurrency), 10);
+  const isVerbose = Boolean(values.verbose);
 
   let targetVideos: Video[] = [];
   if (values.file) {
@@ -192,7 +350,7 @@ async function main() {
     targetVideos = await db.select().from(videos);
   } else {
     logger.error(
-      'Usage: bun run ingest:extract-entities --file <filename> | --all [--force] [--run-id <id>] [--batch-size 50] [--concurrency 8]',
+      'Usage: bun run ingest:extract-entities --file <filename> | --all [--force] [--run-id <id>] [--resume-any-prompt] [--summary-type scene] [--concurrency 8] [--verbose]',
     );
     process.exit(1);
   }
@@ -202,128 +360,269 @@ async function main() {
     return;
   }
 
-  const targetVideoIds = targetVideos.map((video) => video.id);
+  logger.info(
+    { videoCount: targetVideos.length },
+    '📋 Planning phase: Calculating chunks...',
+  );
 
-  if (values.force) {
-    const chunkIds = await db
-      .select({ id: chunks.id })
-      .from(chunks)
-      .where(inArray(chunks.videoId, targetVideoIds));
-    const ids = chunkIds.map((row) => row.id);
-    if (ids.length > 0) {
-      await db
-        .delete(chunkEntityMentions)
-        .where(inArray(chunkEntityMentions.chunkId, ids));
+  const planner = new JobPlanner(
+    db,
+    summaryType,
+    promptHash,
+    runId,
+    Boolean(values['resume-any-prompt']),
+  );
+
+  const { jobs, videosToProcess, videosSkipped } = await planner.planJobs(
+    targetVideos,
+    { force: values.force },
+  );
+
+  if (videosSkipped.length > 0) {
+    for (const video of videosSkipped) {
+      logger.info(
+        { filename: video.filename },
+        '✅ Video fully processed (skipping)',
+      );
     }
   }
 
-  const processed = await db
-    .select({ chunkId: chunkEntityMentions.chunkId })
-    .from(chunkEntityMentions)
-    .where(
-      and(
-        eq(chunkEntityMentions.runId, runId),
-        eq(chunkEntityMentions.promptHash, promptHash),
-      ),
-    );
-
-  const processedIds = new Set(processed.map((row) => row.chunkId));
-
-  const chunkRows = await db
-    .select({
-      id: chunks.id,
-      videoId: chunks.videoId,
-      startTime: chunks.startTime,
-      endTime: chunks.endTime,
-      text: chunks.text,
-      videoTitle: videos.title,
-      videoFilename: videos.filename,
-    })
-    .from(chunks)
-    .innerJoin(videos, eq(chunks.videoId, videos.id))
-    .where(inArray(chunks.videoId, targetVideoIds))
-    .orderBy(chunks.startTime);
-
-  if (chunkRows.length === 0) {
-    logger.info('No chunks found for extraction.');
-    return;
-  }
-
-  const chunkIds = chunkRows.map((row) => row.id);
-  const summaryRows = await db
-    .select({
-      chunkId: chunkSummaries.chunkId,
-      summary: chunkSummaries.summary,
-    })
-    .from(chunkSummaries)
-    .where(
-      and(
-        eq(chunkSummaries.summaryType, summaryType),
-        inArray(chunkSummaries.chunkId, chunkIds),
-      ),
-    )
-    .orderBy(desc(chunkSummaries.id));
-
-  const summaryMap = new Map<number, string>();
-  for (const row of summaryRows) {
-    if (!summaryMap.has(row.chunkId)) {
-      summaryMap.set(row.chunkId, row.summary);
-    }
-  }
-
-  const pending = chunkRows
-    .filter((row) => !processedIds.has(row.id))
-    .map((row) => ({
-      ...row,
-      summary: summaryMap.get(row.id) ?? null,
-    }));
-
-  if (pending.length === 0) {
-    logger.info('No chunks to extract entities from.');
-    return;
+  if (jobs.length === 0) {
+    logger.info('🏁 No work to do - all videos already processed.');
+    process.exit(0);
   }
 
   logger.info(
     {
-      pending: pending.length,
-      runId,
-      batchSize,
-      concurrency,
+      totalJobs: jobs.length,
+      videosToProcess: videosToProcess.length,
+      videosSkipped: videosSkipped.length,
     },
-    'Starting entity extraction',
+    `🚀 Interleaved execution: ${jobs.length} chunks across ${videosToProcess.length} videos`,
   );
 
-  const modelName = parseGenModelFlag(values['gen-model']);
-  const extractor = new EntityExtractor(db, getGenModel(modelName));
+  const stats = {
+    totalVideos: videosToProcess.length,
+    completedVideos: 0,
+    totalChunks: jobs.length,
+    completedChunks: 0,
+    totalScenes: 0, // Using this for total mentions
+    errors: [] as Array<{ videoId: number; filename: string; error: string }>,
+    warnings: [] as Array<{
+      videoId: number;
+      filename: string;
+      message: string;
+    }>,
+    failedChunks: [] as Array<{
+      videoId: number;
+      filename: string;
+      chunkNum: number;
+      totalChunks: number;
+      errorType: 'ai-parse' | 'api' | 'unknown';
+      errorMessage: string;
+    }>,
+  };
 
-  for (let i = 0; i < pending.length; i += batchSize) {
-    const batch = pending.slice(i, i + batchSize);
-    const active = new Set<Promise<void>>();
-
-    for (const row of batch) {
-      const promise = extractor
-        .extractForChunk(row, promptHash, runId, modelName)
-        .then(() => undefined);
-
-      active.add(promise);
-      promise.finally(() => active.delete(promise));
-
-      if (active.size >= concurrency) {
-        await Promise.race(active);
-      }
+  const videoProgress = new Map<
+    number,
+    {
+      video: Video;
+      totalChunks: number;
+      completedChunks: number;
+      mentions: number;
     }
+  >();
 
-    await Promise.all(active);
+  for (const video of videosToProcess) {
+    const videoJobs = jobs.filter((job) => job.video.id === video.id);
+    const totalChunks = videoJobs.length;
+    videoProgress.set(video.id, {
+      video,
+      totalChunks,
+      completedChunks: 0,
+      mentions: 0,
+    });
+  }
+
+  const tui = isVerbose ? null : new TUI();
+
+  if (!isVerbose) {
+    logger.level = 'silent';
+    await tui!.start(stats.totalChunks, stats.totalVideos, maxConcurrency);
+  } else {
     logger.info(
-      {
-        batch: i / batchSize + 1,
-        total: Math.ceil(pending.length / batchSize),
-      },
-      'Batch completed',
+      { jobs: jobs.length, maxConcurrency },
+      '🎬 Starting interleaved processing...',
     );
   }
 
-  logger.info('Entity extraction complete');
+  process.on('SIGINT', () => {
+    if (!isVerbose && tui) {
+      tui.stop();
+    }
+    console.log('\n\n⚠️ Interrupted - exiting immediately');
+    process.exit(1);
+  });
+
+  const progressCallbacks: ProgressCallbacks = {
+    onChunkComplete: (video, mentionCount) => {
+      stats.totalScenes += mentionCount; // TUI uses totalScenes field for items found
+      const progress = videoProgress.get(video.id);
+      if (!progress) return;
+      progress.mentions += mentionCount;
+      if (!isVerbose && tui) {
+        tui.updateProgress(
+          stats.completedChunks,
+          stats.completedVideos,
+          stats.totalScenes,
+        );
+      }
+    },
+    onVideoComplete: (video, totalMentions) => {
+      stats.completedVideos++;
+      if (!isVerbose && tui) {
+        tui.updateProgress(
+          stats.completedChunks,
+          stats.completedVideos,
+          stats.totalScenes,
+        );
+      } else {
+        logger.info(
+          {
+            videoId: video.id,
+            filename: video.filename,
+            mentions: totalMentions,
+          },
+          '✅ Video complete',
+        );
+      }
+    },
+    onVideoError: (video, error) => {
+      stats.errors.push({ videoId: video.id, filename: video.filename, error });
+      if (!isVerbose && tui) {
+        tui.showError(`${video.filename}: ${error}`, 10000);
+      } else {
+        logger.error({ videoId: video.id, error }, '❌ Video error');
+      }
+    },
+    onVideoWarning: (video, message) => {
+      stats.warnings.push({
+        videoId: video.id,
+        filename: video.filename,
+        message,
+      });
+      if (isVerbose) {
+        logger.warn({ videoId: video.id }, `⚠️ ${message}`);
+      }
+    },
+  };
+
+  const modelName = parseGenModelFlag(values['gen-model']);
+  const extractor = new ChunkEntityExtractor(db, getGenModel(modelName));
+
+  const activePromises = new Set<Promise<unknown>>();
+
+  for (const job of jobs) {
+    if (activePromises.size >= maxConcurrency) {
+      await Promise.race(activePromises);
+    }
+
+    const progress = videoProgress.get(job.video.id);
+    if (!progress) continue;
+
+    const chunkStartTime = Date.now();
+    let chunkError: string | null = null;
+    let chunkErrorType: 'ai-parse' | 'api' | 'unknown' = 'unknown';
+    let mentionCount = 0;
+
+    const promise = extractor
+      .processChunkJob(job, promptHash, runId, modelName)
+      .then((count) => {
+        mentionCount = count;
+        progressCallbacks.onChunkComplete(job.video, count);
+        return { count, error: null, errorType: null };
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        const errorType = (error as Error & { errorType?: string }).errorType;
+        chunkError = message;
+        chunkErrorType =
+          errorType === 'ai-parse'
+            ? 'ai-parse'
+            : errorType === 'api'
+              ? 'api'
+              : 'unknown';
+
+        stats.failedChunks.push({
+          videoId: job.video.id,
+          filename: job.video.filename,
+          chunkNum: job.chunkIndex + 1,
+          totalChunks: job.totalChunks,
+          errorType: chunkErrorType,
+          errorMessage: message,
+        });
+
+        progressCallbacks.onVideoError(job.video, message);
+        return { count: 0, error: message, errorType: chunkErrorType };
+      })
+      .finally(() => {
+        stats.completedChunks++;
+        progress.completedChunks++;
+        if (progress.completedChunks >= progress.totalChunks) {
+          progressCallbacks.onVideoComplete(job.video, progress.mentions);
+        }
+        if (!isVerbose && tui) {
+          tui.recordChunkComplete({
+            videoId: job.video.id,
+            filename: job.video.filename,
+            chunkNum: job.chunkIndex + 1,
+            totalChunks: job.totalChunks,
+            title: chunkError ? null : `${mentionCount} entities`, // Reuse title field for entity count
+            durationMs: Date.now() - chunkStartTime,
+            timestamp: Date.now(),
+            hadError: chunkError !== null,
+            errorType: chunkErrorType,
+            errorMessage: chunkError ?? undefined,
+          });
+          tui.setInFlightCount(activePromises.size);
+          tui.updateProgress(
+            stats.completedChunks,
+            stats.completedVideos,
+            stats.totalScenes,
+          );
+        }
+      });
+
+    activePromises.add(promise);
+
+    if (!isVerbose && tui) {
+      tui.setInFlightCount(activePromises.size);
+    }
+
+    promise.finally(() => {
+      activePromises.delete(promise);
+      if (!isVerbose && tui) {
+        tui.setInFlightCount(activePromises.size);
+      }
+    });
+  }
+
+  await Promise.all(activePromises);
+
+  if (!isVerbose && tui) {
+    tui.finalize({
+      totalVideos: stats.totalVideos,
+      completedVideos: stats.completedVideos,
+      totalChunks: stats.totalChunks,
+      completedChunks: stats.completedChunks,
+      totalScenes: stats.totalScenes, // Repurposed for total mentions
+      errors: stats.errors,
+      warnings: stats.warnings,
+      failedChunks: stats.failedChunks,
+    });
+  } else {
+    logger.info('🏁 All videos processed.');
+  }
 }
 
 if (import.meta.main) {

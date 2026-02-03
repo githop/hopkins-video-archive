@@ -62,19 +62,40 @@ export const ChunkEntityExtractionSchema = z.object({
 
 export const CHUNK_ENTITY_EXTRACTION_PROMPT = `You are an expert archivist extracting evidence-grounded entity mentions from transcript chunks.
 
-ENTITY TYPES:
-- PERSON: A named individual (e.g., "Karen", "Aunt Michelle")
-- ROLE: A non-specific role (e.g., "The priest", "Coach")
-- PLACE: A specific named location (e.g., "Lake Cumberland")
-- SETTING: A generic setting (e.g., "Kitchen", "Backyard")
-- ACTIVITY: An event or activity (e.g., "Christmas", "Fishing", "Birthday")
+The transcript is provided in the format: "[timestamp] Speaker text...".
 
-EVIDENCE RULES:
-1. evidence_text MUST be an exact substring from the transcript chunk.
-2. evidence_text should be the minimal quote that supports the mention.
-3. start_time and end_time must fall within the chunk's time range.
-4. If you are not confident, mark confidence as "low".
-5. If you cannot ground a mention to exact evidence, omit it.
+ENTITY TYPES:
+- PERSON: A named individual (e.g., "Karen", "Aunt Michelle", "Mr. Smith").
+- ROLE: A non-specific role (e.g., "The priest", "Coach", "The teacher").
+- PLACE: A specific named location (e.g., "Lake Cumberland", "Disney World", "Grandma's House").
+- SETTING: A generic setting (e.g., "Kitchen", "Backyard", "School").
+- ACTIVITY: A specific event, sport, or leisure activity (e.g., "Christmas", "Fishing", "Birthday Party", "Football").
+  * EXCLUDE generic verbs/nouns like "talking", "walking", "love", "movement", "count", "position", "order".
+  * EXCLUDE common dialogue parts like "Hello", "Goodbye".
+
+EXTRACTION RULES:
+1. RAW_TEXT: Must match the text as spoken/written. DO NOT NORMALIZE or cluster.
+   - If text says "Mike", raw_text must be "Mike" (NOT "Michael").
+   - If text says "Mrs. R", raw_text must be "Mrs. R" (NOT "Mrs. Reinberger").
+   - If text says "the party", raw_text can be "party" (removing determinants is okay).
+2. EVIDENCE_TEXT: Must be an EXACT substring from the transcript chunk.
+3. TIMESTAMPS: start_time and end_time must fall within the chunk's time range (use the [timestamp] markers).
+4. CONFIDENCE: If you are not confident, mark confidence as "low".
+
+EXAMPLES:
+
+Input Chunk:
+[10.50s] I think Uncle Bob is coming to the party.
+[15.20s] He said he would bring the fishing gear.
+
+Output:
+{
+  "mentions": [
+    { "type": "PERSON", "raw_text": "Uncle Bob", "evidence_text": "Uncle Bob", "start_time": 10.5, "end_time": 15.2, "confidence": "high" },
+    { "type": "ACTIVITY", "raw_text": "party", "evidence_text": "the party", "start_time": 10.5, "end_time": 10.5, "confidence": "medium" },
+    { "type": "ACTIVITY", "raw_text": "fishing", "evidence_text": "fishing gear", "start_time": 15.2, "end_time": 15.2, "confidence": "high" }
+  ]
+}
 
 OUTPUT: Return a JSON object with a "mentions" array. Each mention must include:
 - type, raw_text, evidence_text, start_time, end_time, confidence
@@ -405,7 +426,13 @@ export const ActivityClusteringSchema = z.object({
     z.object({
       activity: z.string(),
       canonical: z.string(),
-      category: z.enum(['SPORT', 'RECREATION', 'HOLIDAY', 'MILESTONE', 'DISCARD']),
+      category: z.enum([
+        'SPORT',
+        'RECREATION',
+        'HOLIDAY',
+        'MILESTONE',
+        'DISCARD',
+      ]),
       reasoning: z.string(),
     }),
   ),

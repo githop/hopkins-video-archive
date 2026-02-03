@@ -10,7 +10,7 @@
     "ingest:seed": "bun --filter @hop-hv-rag/ingest seed",
     "ingest:chunk": "bun --filter @hop-hv-rag/ingest ingest:chunk",
     "ingest:summarize-chunks": "bun --cwd packages/ingest ingest:summarize-chunks",
-    "ingest:extract-entities": "bun --filter @hop-hv-rag/ingest ingest:extract-entities",
+    "ingest:extract-entities": "bun --cwd packages/ingest ingest:extract-entities",
     "ingest:materialize-entities": "bun --filter @hop-hv-rag/ingest ingest:materialize-entities",
     "ingest:temporal": "bun --filter @hop-hv-rag/ingest ingest:temporal",
     "ingest:global": "bun --filter @hop-hv-rag/ingest ingest:global",
