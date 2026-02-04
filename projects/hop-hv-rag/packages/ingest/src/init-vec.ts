@@ -14,16 +14,6 @@ async function main() {
   // vec0 is the virtual table type for sqlite-vec
   // dimension count: 1024 for Qwen3-Embedding-0.6B (embed-small)
 
-  logger.info('Creating vec_scenes...');
-  await db.run(
-    sql.raw(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS vec_scenes USING vec0(
-      rowid INTEGER PRIMARY KEY,
-      scene_embedding FLOAT[1024]
-    );
-  `),
-  );
-
   logger.info('Creating vec_chunks...');
   await db.run(
     sql.raw(`

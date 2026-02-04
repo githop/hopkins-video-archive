@@ -70,7 +70,7 @@ export async function runClustering<
     schema,
     batchSize,
     concurrency,
-    timeout = 180000,
+    timeout = 6 * 60 * 1000,
     maxRetries = 3,
     categoryFallback,
     validCategories,

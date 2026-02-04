@@ -1,6 +1,6 @@
 /**
- * Backup script for the hv-rag database and registry files.
- * Creates a timestamped folder in data/backups/ with copies of all data files.
+ * Backup script for the hv-rag database and core data files.
+ * Creates a timestamped folder in data/backups/ with copies of key data files.
  */
 
 import { join } from 'node:path';
@@ -10,16 +10,7 @@ import { logger } from '@hop-hv-rag/core';
 const DATA_DIR = join(import.meta.dir, '../../../data');
 const BACKUPS_DIR = join(DATA_DIR, 'backups');
 
-const FILES_TO_BACKUP = [
-  'hv-rag.db',
-  'mapping.json',
-  'participant-registry.json',
-  'location-registry.json',
-  'activity-registry.json',
-  'unique-participants.json',
-  'unique-locations.json',
-  'unique-activities.json',
-];
+const FILES_TO_BACKUP = ['hv-rag.db', 'mapping.json'];
 
 function getTimestamp(): string {
   const now = new Date();

@@ -173,7 +173,7 @@ export class FamilyArchivist {
 
   /**
    * Build structured Source[] from hybrid search results.
-   * Fetches canonical participants, locations, and activities from junction tables.
+   * Fetches canonical participants, locations, and activities from entity links.
    */
   private async buildSources(results: HybridResult[]): Promise<Source[]> {
     const sources: Source[] = [];

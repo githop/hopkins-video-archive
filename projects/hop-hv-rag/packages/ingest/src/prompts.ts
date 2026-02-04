@@ -147,8 +147,8 @@ Your task is to determine the recording year(s) for home videos by analyzing bot
 
 RULES:
 1. YEAR RANGE: yearStart and yearEnd define the recording period. For single-year videos, set both to the same value.
-   - Filename "1984-1985 Ski Trip.mp4" with scenes mentioning both years → yearStart: 1984, yearEnd: 1985
-   - Filename "1984-1985 Ski Trip.mp4" but scenes only mention 1984 → yearStart: 1984, yearEnd: 1984
+    - Filename "1984-1985 Ski Trip.mp4" with chunks mentioning both years → yearStart: 1984, yearEnd: 1985
+    - Filename "1984-1985 Ski Trip.mp4" but chunks only mention 1984 → yearStart: 1984, yearEnd: 1984
 
 2. EVIDENCE HIERARCHY (in order of reliability):
     - PRIMARY: Explicit year mentions in chunk content with full dates (e.g., "February 27, 1988", "Christmas 1993", "July 1st, 1986")

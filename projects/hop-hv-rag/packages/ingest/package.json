@@ -5,6 +5,7 @@
   "scripts": {
     "backup": "bun src/backup.ts",
     "clean": "bun src/clean.ts",
+    "reset:entities": "bun src/reset-entities.ts",
     "seed": "bun src/seed-metadata.ts",
     "summarize": "bun src/summarize-chunks.ts",
     "ingest:chunk": "bun src/chunk-transcripts.ts",
@@ -22,12 +23,7 @@
     "cluster-participants": "bun src/cluster-participants.ts",
     "cluster-locations": "bun src/cluster-locations.ts",
     "cluster-activities": "bun src/cluster-activities.ts",
-    "migrate-participants": "bun src/migrate-participants.ts",
-    "migrate-locations": "bun src/migrate-locations.ts",
-    "migrate-activities": "bun src/migrate-activities.ts",
-    "validate-registry": "bun src/validate-registry.ts",
     "test-meta": "bun src/test-meta.ts",
-    "rebuild-fts": "bun src/rebuild-fts.ts",
     "ingest:rebuild-fts-chunks": "bun src/rebuild-fts-chunks.ts"
   },
   "dependencies": {

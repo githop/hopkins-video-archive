@@ -46,5 +46,17 @@
     "category": "Short Phrase Match",
     "prompt": "Who said 'Let's go' in 2003?",
     "expected": "Should find the 'Departure Prompt' scene in 2003.json."
+  },
+  {
+    "id": "EVAL-009",
+    "category": "Pheasant hunt summary",
+    "prompt": "What happened on the pheasant hunt?",
+    "expected": "Should describe the pheasant hunt"
+  },
+  {
+    "id": "EVAL-010",
+    "category": "Specific Topic Retrieval",
+    "prompt": "What is KH Talk?",
+    "expected": "Should describe the KH Talk, participants, show topics, etc"
   }
 ]

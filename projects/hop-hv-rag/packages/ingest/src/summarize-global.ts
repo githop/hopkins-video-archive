@@ -130,8 +130,8 @@ class GlobalArchivist {
     video: Video,
     summaryRows: Array<{ title: string; summary: string; startTime: number }>,
   ): Promise<string> {
-    // Construct context from scenes
-    const sceneContext = summaryRows
+    // Construct context from chunks
+    const chunkContext = summaryRows
       .map((row) => {
         const time = this.formatTime(row.startTime);
         return `[${time}] ${row.title || 'Untitled'}: ${row.summary}`;
@@ -142,8 +142,8 @@ class GlobalArchivist {
     const userPrompt = `Video Title: ${video.title || video.filename}
 Recorded Date: ${video.recordedAt || 'Unknown'}
 
-SCENE LOG:
-${sceneContext}`;
+CHUNK LOG:
+${chunkContext}`;
 
     logger.debug(
       {

@@ -6,10 +6,10 @@ This document defines the architecture, domains, and conventions of the `hop-hv-
 
 ### Ingestion Domain
 
-The ingestion pipeline transforms raw transcription data into indexed, semantic scenes.
+The ingestion pipeline transforms raw transcription data into indexed, semantic chunks.
 
 - **Iterative Workflow**: Tools are designed to run either on a single video (surgical iteration) or in batch.
-- **Process**: Includes scene extraction, summarization, embedding, and entity canonicalization.
+- **Process**: Includes chunking, summarization, embedding, and entity canonicalization.
 - **Testing**: When improving logic (e.g., prompt refinement), iterate on small batches or single files using the `--file` flag to verify impact before full-scale processing.
 
 ### Retrieval Domain
@@ -29,11 +29,11 @@ Agents are encouraged to leverage the environment to test assumptions and invest
 
 ### Mutation & Transparency Protocol
 
-Curiosity is encouraged, but data integrity is paramount. Before performing any mutation to the database or registry assets:
+Curiosity is encouraged, but data integrity is paramount. Before performing any mutation to the database or data assets:
 
 1.  **Identify**: Clearly state the inconsistency or error you've discovered.
 2.  **Describe**: Explain the intended transformation and show the code/SQL that will perform it.
-3.  **Back Up**: Proactively suggest or perform a backup of the asset (e.g., `cp data/registry.json data/registry.json.bak`).
+3.  **Back Up**: Proactively suggest or perform a backup of the asset (e.g., `cp data/hv-rag.db data/hv-rag.db.bak`).
 4.  **Permission**: Obtain explicit user approval before executing any mutation.
 
 ## 3. Conventions

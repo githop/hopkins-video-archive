@@ -83,7 +83,7 @@ bun run ingest:rebuild-fts-chunks
 ### 9. Embed chunks (embedding model)
 
 ```bash
-bun run ingest:embed-chunks --all --summary-type scene
+bun run ingest:embed-chunks --all --summary-type chunk
 ```
 
 ### 10. Optional: Global summaries (LLM)
@@ -116,7 +116,7 @@ To wipe the DB and start fresh (from this package directory):
 bun run clean
 ```
 
-This deletes `data/hv-rag.db` and registry artifacts (if present). `mapping.json` is preserved.
+This deletes `data/hv-rag.db`. `mapping.json` is preserved.
 
 ## Command Reference
 
@@ -138,7 +138,7 @@ This deletes `data/hv-rag.db` and registry artifacts (if present). `mapping.json
 | `ingest:temporal`             | LLM temporal extraction from chunk summaries.    |
 | `embed-videos`                | Embed global video summaries.                    |
 | `backup`                      | Create a timestamped backup of DB + registries.  |
-| `clean`                       | Delete the DB and registry artifacts.            |
+| `clean`                       | Delete the DB artifacts.                         |
 | `verify`                      | Validate metadata consistency.                   |
 
 ## Common CLI Options

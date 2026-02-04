@@ -82,7 +82,7 @@ const archivist = new FamilyArchivist(
   db,
 );
 
-// Initialize archivist (loads registries)
+// Initialize archivist (loads entity index)
 await archivist.init();
 
 const app = new Hono();

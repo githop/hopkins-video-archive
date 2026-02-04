@@ -1,6 +1,6 @@
 /**
  * Reset script for the hv-rag database.
- * Deletes the database file and registry files to start fresh.
+ * Deletes the database file and related artifacts to start fresh.
  * mapping.json is preserved as it contains DriveFileId mappings.
  */
 
@@ -10,18 +10,10 @@ import { logger } from '@hop-hv-rag/core';
 
 const DATA_DIR = join(import.meta.dir, '../../../data');
 
-const FILES_TO_DELETE = [
-  'hv-rag.db',
-  'participant-registry.json',
-  'location-registry.json',
-  'activity-registry.json',
-  'unique-participants.json',
-  'unique-locations.json',
-  'unique-activities.json',
-];
+const FILES_TO_DELETE = ['hv-rag.db'];
 
 async function main() {
-  logger.info('Resetting database and registry files...');
+  logger.info('Resetting database artifacts...');
   logger.info('(mapping.json is preserved)\n');
 
   let deleted = 0;
