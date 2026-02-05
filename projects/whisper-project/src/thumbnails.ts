@@ -1,19 +1,19 @@
 /**
  * Thumbnail Generation Script
  *
- * Extracts scene-level thumbnails from video files using FFmpeg.
- * Queries hop-hv-rag database for scene timestamps and generates thumbnails.
- * Does NOT update the database - Phase 2 will handle that integration.
+ * Extracts chunk-level thumbnails from video files using FFmpeg.
+ * Queries hop-hv-rag database for chunk timestamps and generates thumbnails
+ * at the midpoint of each chunk, named by the chunk start time.
  */
 import { Database } from "bun:sqlite";
-import { join, basename } from "node:path";
+import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { CONFIG } from "./config";
 import { FFMPEG } from "./ffmpeg";
 import { Logger } from "./logger";
 
-interface SceneRow {
-  scene_id: number;
+interface ChunkRow {
+  chunk_id: number;
   video_id: number;
   video_filename: string;
   start_time: number;
@@ -29,15 +29,14 @@ function getThumbnailTimestamp(startTime: number, endTime: number): number {
 
 /**
  * Generate thumbnail output path and directory structure
- * Filename uses scene start time for stable, regenerable naming
+ * Filename uses chunk start time for stable, regenerable naming
  */
 function getThumbnailPath(
   videoFilename: string,
-  sceneStartTime: number,
-  timestamp: number,
+  chunkStartTime: number,
 ): { dir: string; fullPath: string } {
-  const videoBase = basename(videoFilename, ".m4v").replace(".mp4", "");
-  const timestampStr = String(Math.floor(sceneStartTime)).padStart(5, "0");
+  const videoBase = videoFilename.replace(/\.[^/.]+$/, '');
+  const timestampStr = String(Math.floor(chunkStartTime)).padStart(5, "0");
 
   const dir = join(CONFIG.THUMBNAILS_DIR, videoBase);
   const filename = `${timestampStr}.jpg`;
@@ -47,24 +46,24 @@ function getThumbnailPath(
 }
 
 /**
- * Query all scenes that need thumbnails
+ * Query all chunks that need thumbnails
  */
-function getScenes(db: Database): SceneRow[] {
+function getChunks(db: Database): ChunkRow[] {
   return db
     .query(
       `
     SELECT
-      s.id as scene_id,
-      s.video_id,
+      c.id as chunk_id,
+      c.video_id,
       v.filename as video_filename,
-      s.start_time,
-      s.end_time
-    FROM scenes s
-    JOIN videos v ON s.video_id = v.id
-    ORDER BY v.filename, s.start_time
+      c.start_time,
+      c.end_time
+    FROM chunks c
+    JOIN videos v ON c.video_id = v.id
+    ORDER BY v.filename, c.start_time
   `,
     )
-    .all() as SceneRow[];
+    .all() as ChunkRow[];
 }
 
 /**
@@ -92,22 +91,22 @@ export async function generateThumbnails(options: {
     await mkdir(CONFIG.THUMBNAILS_DIR, { recursive: true });
   }
 
-  // Connect to database (read-only for querying scene data)
+  // Connect to database (read-only for querying chunk data)
   const db = new Database(CONFIG.HV_RAG_DB, { readonly: true });
-  const scenes = getScenes(db);
+  const chunks = getChunks(db);
 
   Logger.info(
-    `Found ${scenes.length} scenes across ${new Set(scenes.map((s) => s.video_id)).size} videos`,
+    `Found ${chunks.length} chunks across ${new Set(chunks.map((c) => c.video_id)).size} videos`,
   );
 
-  // Filter scenes by video if requested
-  let filteredScenes = scenes;
+  // Filter chunks by video if requested
+  let filtered = chunks;
   if (videoFilter) {
-    filteredScenes = scenes.filter((s) =>
-      s.video_filename.includes(videoFilter),
+    filtered = chunks.filter((c) =>
+      c.video_filename.includes(videoFilter),
     );
     Logger.info(
-      `Filtered to ${filteredScenes.length} scenes matching "${videoFilter}"`,
+      `Filtered to ${filtered.length} chunks matching "${videoFilter}"`,
     );
   }
 
@@ -120,31 +119,30 @@ export async function generateThumbnails(options: {
   const semaphore = new Semaphore(concurrency);
 
   await Promise.all(
-    filteredScenes.map(async (scene) => {
+    filtered.map(async (chunk) => {
       await semaphore.acquire();
 
       try {
-        const videoPath = join(CONFIG.VIDEOS_DIR, scene.video_filename);
+        const videoPath = join(CONFIG.VIDEOS_DIR, chunk.video_filename);
 
         // Check if video file exists
         const videoFile = Bun.file(videoPath);
         if (!(await videoFile.exists())) {
           Logger.warn(
-            `Video file not found: ${videoPath} (skipping scene ${scene.scene_id})`,
+            `Video file not found: ${videoPath} (skipping chunk ${chunk.chunk_id})`,
           );
           skipped++;
           return;
         }
 
-        // Calculate thumbnail details
+        // Extract frame at midpoint, name file by start time
         const timestamp = getThumbnailTimestamp(
-          scene.start_time,
-          scene.end_time,
+          chunk.start_time,
+          chunk.end_time,
         );
         const { dir, fullPath } = getThumbnailPath(
-          scene.video_filename,
-          scene.start_time,
-          timestamp,
+          chunk.video_filename,
+          chunk.start_time,
         );
 
         // Skip if thumbnail already exists
@@ -171,11 +169,11 @@ export async function generateThumbnails(options: {
 
           processed++;
           Logger.info(
-            `✓ ${scene.video_filename} [${scene.scene_id}]: ${fullPath}`,
+            `✓ ${chunk.video_filename} [${chunk.chunk_id}]: ${fullPath}`,
           );
         } catch (error) {
           Logger.error(
-            `Failed to extract thumbnail for scene ${scene.scene_id}: ${error}`,
+            `Failed to extract thumbnail for chunk ${chunk.chunk_id}: ${error}`,
           );
           failed++;
         }
