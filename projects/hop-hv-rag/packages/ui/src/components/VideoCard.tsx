@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Source } from '@hop-hv-rag/search';
 import { VideoModal } from './VideoModal';
+import { thumbnailUrl } from '../utils/mediaUrls.ts';
 
 interface VideoCardProps {
   source: Source;
@@ -27,7 +28,10 @@ export function VideoCard({ source, isUsed }: VideoCardProps) {
         <div className="relative aspect-video bg-background-surface">
           {/* Thumbnail Image */}
           <img
-            src={source.thumbnailUrl}
+            src={thumbnailUrl(
+              source.video.filename,
+              source.timestamp.startSeconds,
+            )}
             alt={source.chunkTitle || 'Video thumbnail'}
             className="absolute inset-0 w-full h-full object-cover"
             onError={(e) => {

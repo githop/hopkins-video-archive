@@ -80,7 +80,9 @@ async function main() {
               `[${s.citationId}] ${s.video.title} @ ${s.timestamp.formatted}`,
             );
             logger.print(`  ${s.chunkTitle}`);
-            logger.print(`  ${s.video.videoUrl}\n`);
+            logger.print(
+              `  /videos/${s.video.filename}#t=${Math.floor(s.timestamp.startSeconds)}\n`,
+            );
           }
         }
 

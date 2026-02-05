@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { Source } from '@hop-hv-rag/search';
+import { videoUrl, transcriptUrl } from '../utils/mediaUrls.ts';
 
 interface VideoModalProps {
   source: Source | null;
@@ -23,10 +24,6 @@ export function VideoModal({ source, isOpen, onClose }: VideoModalProps) {
   if (!isOpen || !source) return null;
 
   const { video, timestamp, chunkTitle } = source;
-
-  // Compute transcript URL from video filename
-  const baseFilename = video.filename.replace(/\.[^/.]+$/, '');
-  const transcriptUrl = `/transcripts/${baseFilename}.vtt`;
 
   return (
     <div
@@ -59,7 +56,7 @@ export function VideoModal({ source, isOpen, onClose }: VideoModalProps) {
         <div className="relative aspect-video">
           <video
             ref={videoRef}
-            src={video.videoUrl}
+            src={videoUrl(video.filename, timestamp.startSeconds)}
             controls
             className="w-full h-full"
             playsInline
@@ -67,7 +64,7 @@ export function VideoModal({ source, isOpen, onClose }: VideoModalProps) {
           >
             <track
               kind="subtitles"
-              src={transcriptUrl}
+              src={transcriptUrl(video.filename)}
               srcLang="en"
               label="English"
               default

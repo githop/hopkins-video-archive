@@ -5,22 +5,20 @@ export { EntitySchema };
 export type { Entity };
 
 /**
- * Schema for a source (scene) returned from the archive search
+ * Schema for a source chunk returned from the archive search
  */
 export const SourceSchema = z.object({
   chunkId: z.number(),
   citationId: z.number(), // [1], [2], [3], etc.
   chunkTitle: z.string().nullable(),
   summary: z.string(),
-  thumbnailUrl: z.string(),
   video: z.object({
     id: z.number(),
     title: z.string().nullable(),
     year: z.number().nullable(),
     yearStart: z.number().nullable().optional(),
     yearEnd: z.number().nullable().optional(),
-    filename: z.string(), // Video filename for local streaming
-    videoUrl: z.string(), // URL with timestamp: /videos/filename.m4v#t=95
+    filename: z.string(), // Video filename — client derives media URLs from this
   }),
   timestamp: z.object({
     startSeconds: z.number(),

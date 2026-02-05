@@ -219,17 +219,11 @@ export class FamilyArchivist {
       const seconds = Math.floor(r.startTime % 60);
       const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-      const thumbnailUrl = this.buildThumbnailUrl(r.videoFilename, r.startTime);
-
-      // Build video URL with timestamp for streaming
-      const videoUrl = `/videos/${r.videoFilename}#t=${Math.floor(r.startTime)}`;
-
       sources.push({
         chunkId: r.id,
         citationId: index + 1, // Assign [1], [2], [3], etc.
         chunkTitle: r.title,
         summary: r.summary ?? 'No summary available.',
-        thumbnailUrl,
         video: {
           id: r.videoId,
           title: r.videoTitle,
@@ -237,7 +231,6 @@ export class FamilyArchivist {
           yearStart: r.videoYearStart,
           yearEnd: r.videoYearEnd,
           filename: r.videoFilename,
-          videoUrl,
         },
         timestamp: {
           startSeconds: r.startTime,
@@ -313,12 +306,6 @@ export class FamilyArchivist {
       .join('\n\n');
 
     return context + chunkContext;
-  }
-
-  private buildThumbnailUrl(videoFilename: string, startTime: number): string {
-    const videoFolder = videoFilename.replace(/\.[^/.]+$/, '');
-    const timestampPadded = Math.floor(startTime).toString().padStart(5, '0');
-    return `/thumbnails/${videoFolder}/${timestampPadded}.jpg`;
   }
 
   private extractTranscriptSnippet(text: string): string {
