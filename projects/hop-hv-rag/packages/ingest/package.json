@@ -24,7 +24,8 @@
     "cluster-locations": "bun src/cluster-locations.ts",
     "cluster-activities": "bun src/cluster-activities.ts",
     "test-meta": "bun src/test-meta.ts",
-    "ingest:rebuild-fts-chunks": "bun src/rebuild-fts-chunks.ts"
+    "ingest:rebuild-fts-chunks": "bun src/rebuild-fts-chunks.ts",
+    "migrate:extraction-status": "bun src/migrate-extraction-status.ts"
   },
   "dependencies": {
     "@hop-hv-rag/ai": "workspace:*",

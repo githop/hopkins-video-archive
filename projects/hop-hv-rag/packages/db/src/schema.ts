@@ -136,6 +136,20 @@ export const videoEntities = sqliteTable(
   }),
 );
 
+// 9. CHUNK EXTRACTION STATUS (Tracks entity extraction state)
+export const chunkExtractionStatus = sqliteTable('chunk_extraction_status', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  chunkId: integer('chunk_id')
+    .references(() => chunks.id)
+    .notNull()
+    .unique(),
+  status: text('status', {
+    enum: ['pending', 'success', 'failed', 'empty'],
+  }).notNull(),
+  errorMessage: text('error_message'),
+  createdAt: text('created_at').default(sql`(CURRENT_TIMESTAMP)`),
+});
+
 export type Video = typeof videos.$inferSelect;
 export type Transcript = typeof transcripts.$inferSelect;
 export type Chunk = typeof chunks.$inferSelect;
@@ -145,3 +159,4 @@ export type EntityVariant = typeof entityVariants.$inferSelect;
 export type ChunkEntityMention = typeof chunkEntityMentions.$inferSelect;
 export type ChunkEntity = typeof chunkEntities.$inferSelect;
 export type VideoEntity = typeof videoEntities.$inferSelect;
+export type ChunkExtractionStatus = typeof chunkExtractionStatus.$inferSelect;

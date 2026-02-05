@@ -125,7 +125,18 @@ async function main() {
     )
   `);
 
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS chunk_extraction_status (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chunk_id INTEGER NOT NULL REFERENCES chunks(id) UNIQUE,
+      status TEXT NOT NULL CHECK(status IN ('pending', 'success', 'failed', 'empty')),
+      error_message TEXT,
+      created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+    )
+  `);
+
   logger.info('Standard tables created.');
+  logger.info('Extraction status table created.');
 
   db.run(sql`
     CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks USING fts5(

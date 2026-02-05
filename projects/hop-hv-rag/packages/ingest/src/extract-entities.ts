@@ -7,6 +7,7 @@ import {
   chunks,
   chunkSummaries,
   chunkEntityMentions,
+  chunkExtractionStatus,
   type Video,
   type Chunk,
 } from '@hop-hv-rag/db';
@@ -88,9 +89,6 @@ class JobPlanner {
   constructor(
     private db: ReturnType<typeof createDb>,
     private summaryType: string,
-    private promptHash: string,
-    private runId: string,
-    private resumeAnyPrompt: boolean,
   ) {}
 
   async planJobs(
@@ -139,27 +137,24 @@ class JobPlanner {
 
     const chunkIds = allChunks.map((chunk) => chunk.id);
 
-    // Fetch existing mentions to determine what's pending
-    const processedMentions = await this.db
-      .select({ chunkId: chunkEntityMentions.chunkId })
-      .from(chunkEntityMentions)
-      .where(
-        this.resumeAnyPrompt
-          ? and(
-              eq(chunkEntityMentions.runId, this.runId),
-              inArray(chunkEntityMentions.chunkId, chunkIds),
-            )
-          : and(
-              eq(chunkEntityMentions.runId, this.runId),
-              eq(chunkEntityMentions.promptHash, this.promptHash),
-              inArray(chunkEntityMentions.chunkId, chunkIds),
-            ),
-      );
+    // Check for pending/failed statuses
+    const statusRows = await this.db
+      .select({
+        chunkId: chunkExtractionStatus.chunkId,
+        status: chunkExtractionStatus.status,
+      })
+      .from(chunkExtractionStatus)
+      .where(inArray(chunkExtractionStatus.chunkId, chunkIds));
 
-    const processedIds = new Set(processedMentions.map((row) => row.chunkId));
-    const pendingChunks = allChunks.filter(
-      (chunk) => !processedIds.has(chunk.id),
+    const statusByChunkId = new Map(
+      statusRows.map((row) => [row.chunkId, row.status]),
     );
+
+    // Filter to chunks that are pending or failed
+    const pendingChunks = allChunks.filter((chunk) => {
+      const status = statusByChunkId.get(chunk.id);
+      return status === 'pending' || status === 'failed';
+    });
 
     if (pendingChunks.length === 0) {
       return [];
@@ -214,6 +209,11 @@ class JobPlanner {
     await this.db
       .delete(chunkEntityMentions)
       .where(inArray(chunkEntityMentions.chunkId, ids));
+
+    // Delete status rows
+    await this.db
+      .delete(chunkExtractionStatus)
+      .where(inArray(chunkExtractionStatus.chunkId, ids));
   }
 }
 
@@ -285,6 +285,18 @@ ${chunk.text}`;
             entityId: null,
           })),
         );
+
+        // Update status to success
+        await this.db
+          .update(chunkExtractionStatus)
+          .set({ status: 'success' })
+          .where(eq(chunkExtractionStatus.chunkId, chunk.id));
+      } else {
+        // Update status to empty (no valid entities)
+        await this.db
+          .update(chunkExtractionStatus)
+          .set({ status: 'empty' })
+          .where(eq(chunkExtractionStatus.chunkId, chunk.id));
       }
 
       logger.info(
@@ -294,24 +306,31 @@ ${chunk.text}`;
 
       return validMentions.length;
     } catch (error: unknown) {
+      // Simplified error handling
+      const message = error instanceof Error ? error.message : String(error);
+
+      // Update status to failed with error message
+      await this.db
+        .update(chunkExtractionStatus)
+        .set({
+          status: 'failed',
+          errorMessage: message,
+        })
+        .where(eq(chunkExtractionStatus.chunkId, chunk.id));
+
       if (NoObjectGeneratedError.isInstance(error)) {
         logger.warn(
           { chunkId: chunk.id, text: error.text, response: error.response },
           'No object generated - invalid JSON',
         );
-        const err = new Error('AI failed to generate valid mentions');
-        (err as Error & { errorType?: string }).errorType = 'ai-parse';
-        throw err;
+        throw new Error('AI failed Zod schema parse');
       }
 
-      const message = error instanceof Error ? error.message : String(error);
       logger.error(
         { chunkId: chunk.id, error: message },
         'Entity extraction failed',
       );
-      const err = new Error(message);
-      (err as Error & { errorType?: string }).errorType = 'api';
-      throw err;
+      throw new Error(message);
     }
   }
 }
@@ -326,7 +345,6 @@ async function main() {
       'gen-model': GenModelFlagOption,
       'run-id': { type: 'string' },
       'summary-type': { type: 'string', default: 'scene' },
-      'resume-any-prompt': { type: 'boolean', default: false },
       concurrency: { type: 'string', default: '8' },
       verbose: { type: 'boolean', default: false },
     },
@@ -350,7 +368,7 @@ async function main() {
     targetVideos = await db.select().from(videos);
   } else {
     logger.error(
-      'Usage: bun run ingest:extract-entities --file <filename> | --all [--force] [--run-id <id>] [--resume-any-prompt] [--summary-type scene] [--concurrency 8] [--verbose]',
+      'Usage: bun run ingest:extract-entities --file <filename> | --all [--force] [--run-id <id>] [--summary-type scene] [--concurrency 8] [--verbose]',
     );
     process.exit(1);
   }
@@ -365,13 +383,7 @@ async function main() {
     '📋 Planning phase: Calculating chunks...',
   );
 
-  const planner = new JobPlanner(
-    db,
-    summaryType,
-    promptHash,
-    runId,
-    Boolean(values['resume-any-prompt']),
-  );
+  const planner = new JobPlanner(db, summaryType);
 
   const { jobs, videosToProcess, videosSkipped } = await planner.planJobs(
     targetVideos,
@@ -544,14 +556,11 @@ async function main() {
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        const errorType = (error as Error & { errorType?: string }).errorType;
         chunkError = message;
-        chunkErrorType =
-          errorType === 'ai-parse'
-            ? 'ai-parse'
-            : errorType === 'api'
-              ? 'api'
-              : 'unknown';
+        // Determine error type from message for display purposes
+        chunkErrorType = message.includes('AI failed Zod schema parse')
+          ? 'ai-parse'
+          : 'api';
 
         stats.failedChunks.push({
           videoId: job.video.id,

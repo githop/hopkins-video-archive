@@ -102,8 +102,8 @@ port = 8010
 
 [models.summarizer-bulk-30b.defaults]
 gpu_memory_utilization = 0.9
-max_model_len = 12288
-max_num_seqs = 8
+max_model_len = 16384
+max_num_seqs = 6
 enable_expert_parallel = true
 reasoning_parser = "deepseek_r1"
 

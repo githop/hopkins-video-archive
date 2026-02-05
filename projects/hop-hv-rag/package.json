@@ -25,6 +25,7 @@
     "ingest:cluster-locations": "bun --cwd packages/ingest cluster-locations",
     "ingest:cluster-activities": "bun --cwd packages/ingest cluster-activities",
     "ingest:rebuild-fts-chunks": "bun --filter @hop-hv-rag/ingest ingest:rebuild-fts-chunks",
+    "migrate:extraction-status": "bun --filter @hop-hv-rag/ingest migrate:extraction-status",
     "search:rag": "bun --cwd packages/search rag",
     "search:eval": "bun --cwd packages/search run-eval.ts",
     "ui:server": "bun --cwd packages/search server",

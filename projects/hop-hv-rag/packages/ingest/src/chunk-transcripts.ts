@@ -10,6 +10,7 @@ import {
   chunkEntityMentions,
   chunkEntities,
   videoEntities,
+  chunkExtractionStatus,
   type Transcript,
   type Video,
 } from '@hop-hv-rag/db';
@@ -183,12 +184,18 @@ async function deleteVideoChunks(
   await db
     .delete(chunkSummaries)
     .where(inArray(chunkSummaries.chunkId, chunkIds));
+
+  // Also delete extraction status rows
+  await db
+    .delete(chunkExtractionStatus)
+    .where(inArray(chunkExtractionStatus.chunkId, chunkIds));
+
   await db.delete(chunks).where(eq(chunks.videoId, video.id));
   await db.delete(videoEntities).where(eq(videoEntities.videoId, video.id));
 
   logger.info(
     { videoId: video.id, chunkCount: chunkIds.length },
-    'Deleted existing chunks for video',
+    'Deleted existing chunks and statuses for video',
   );
 }
 
@@ -262,6 +269,12 @@ async function processVideo(
     if (!chunkRow) {
       continue;
     }
+
+    // Insert pending status for new chunk
+    await db.insert(chunkExtractionStatus).values({
+      chunkId: chunkRow.id,
+      status: 'pending',
+    });
 
     previousChunkId = chunkRow.id;
     previousChunkEnd = plan.endTime;

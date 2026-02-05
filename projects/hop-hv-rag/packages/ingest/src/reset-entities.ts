@@ -8,6 +8,7 @@ import {
   chunkEntityMentions,
   chunkEntities,
   videoEntities,
+  chunkExtractionStatus,
 } from '@hop-hv-rag/db';
 
 const DATA_DIR = join(import.meta.dir, '../../../data');
@@ -33,17 +34,24 @@ async function main() {
     logger.info('Deleting chunk entity mentions...');
     await db.delete(chunkEntityMentions);
 
-    // 4. Finally, delete the entities themselves
+    // 4. Reset extraction statuses to pending (don't delete - allows re-running extraction without re-chunking)
+    logger.info('Resetting chunk extraction statuses to pending...');
+    await db.update(chunkExtractionStatus).set({
+      status: 'pending',
+      errorMessage: null,
+    });
+
+    // 5. Finally, delete the entities themselves
     logger.info('Deleting canonical entities...');
     await db.delete(entities);
 
-    // 5. Reset SQLite sequences for these tables so IDs start from 1 again
+    // 6. Reset SQLite sequences for these tables so IDs start from 1 again
     logger.info('Resetting auto-increment sequences...');
     await db.run(
       sql`DELETE FROM sqlite_sequence WHERE name IN ('entities', 'entity_variants', 'chunk_entity_mentions')`,
     );
 
-    // 6. Vacuum to reclaim space
+    // 7. Vacuum to reclaim space
     logger.info('Vacuuming database...');
     await db.run(sql`VACUUM`);
 
