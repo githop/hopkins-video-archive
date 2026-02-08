@@ -1,158 +1,248 @@
-# Ingest Pipeline (`@hop-hv-rag/ingest`)
+# @hop-hv-rag/ingest
 
-This package contains the chunk-centric ingestion pipeline for `hop-hv-rag`. The workflow is fully decoupled and resumable: chunking, summarization, entity extraction, clustering, and indexing are independent steps.
-
-LLM-dependent stages are **explicit CLI commands** and are never run automatically.
+Data ingestion pipeline for the RAG system. Transforms WhisperX transcripts into indexed, searchable chunks with embeddings and extracted entities.
 
 ## Overview
 
-Pipeline stages:
+The ingestion pipeline processes video archives through multiple stages:
 
-1. **Chunking** (no LLM) - create adaptive transcript chunks.
-2. **Chunk Summaries** (LLM) - generate titles and summaries per chunk.
-3. **Entity Extraction** (LLM) - evidence-grounded entity mentions per chunk.
-4. **Clustering / Canonicalization** (LLM) - normalize mentions into canonical entities.
-5. **Materialize Links** (no LLM) - build chunk_entities and video_entities.
-6. **Indexing** (no LLM + embedding model) - FTS rebuild + chunk embeddings.
-7. **Optional**: Global video summaries and temporal metadata.
+1. **Chunking** - Adaptive transcript segmentation
+2. **Summarization** - AI-generated titles and summaries
+3. **Entity Extraction** - Evidence-grounded entity detection
+4. **Entity Clustering** - AI canonicalization (automated)
+5. **Materialization** - Relationship aggregation
+6. **Embedding** - Multi-field vector generation
+7. **Indexing** - Full-text search (FTS5)
 
-## Recommended Workflow
+## Pipeline Flow
 
-Run these steps in order when ingesting a fresh library:
-
-### 1. Initialize database + vectors
-
-```bash
-bun run init-db
-bun run init-vec
+```
+WhisperX JSON → Seed → Chunks → Summaries → Mentions → Clustering → Materialize → Embeddings → FTS
+     │              │       │          │          │          │            │           │        │
+     ▼              ▼       ▼          ▼          ▼          ▼            ▼           ▼        ▼
+videos table   transcripts  chunks   chunk_    chunk_    entities    chunk_    vec_     fts_
+                              table   summaries  mentions   variants   entities   chunks   chunks
 ```
 
-### 2. Seed videos + transcripts
+## Available Scripts
+
+### Core Pipeline
+
+| Script                              | Description                                   |
+| ----------------------------------- | --------------------------------------------- |
+| `bun run ingest:chunk`              | Adaptive chunking with configurable bounds    |
+| `bun run ingest:summarize-chunks`   | Generate AI summaries with titles             |
+| `bun run ingest:extract-entities`   | Extract grounded entity mentions              |
+| `bun run ingest:embed-chunks`       | Create embeddings (summary + entities + text) |
+| `bun run ingest:rebuild-fts-chunks` | Rebuild FTS5 full-text index                  |
+
+### Entity Management
+
+| Script                                | Description                                |
+| ------------------------------------- | ------------------------------------------ |
+| `bun run cluster-participants`        | AI clustering of people (progress TUI)     |
+| `bun run cluster-locations`           | AI clustering of places (progress TUI)     |
+| `bun run cluster-activities`          | AI clustering of activities (progress TUI) |
+| `bun run ingest:materialize-entities` | Aggregate to chunk/video entities          |
+| `bun run reset:entities`              | Clear all entity data                      |
+
+### Data Management
+
+| Script             | Description                      |
+| ------------------ | -------------------------------- |
+| `bun run seed`     | Import videos from WhisperX JSON |
+| `bun run init-db`  | Initialize database schema       |
+| `bun run init-vec` | Initialize sqlite-vec tables     |
+| `bun run backup`   | Create database backup           |
+| `bun run verify`   | Verify metadata integrity        |
+
+### Additional Processing
+
+| Script                    | Description                   |
+| ------------------------- | ----------------------------- |
+| `bun run ingest:temporal` | Extract year ranges           |
+| `bun run ingest:global`   | Generate video summaries      |
+| `bun run embed-videos`    | Create video-level embeddings |
+
+## CLI Usage
+
+All scripts support these common flags:
 
 ```bash
-bun run seed
+# Process single video
+bun run ingest:chunk --file "1995-2.m4v"
+
+# Process all videos with specific model
+bun run ingest:summarize-chunks --gen-model summarizer-bulk-30b
+
+# Force reprocessing (ignore cache)
+bun run ingest:extract-entities --force
+
+# Specify batch size
+bun run ingest:embed-chunks --all --batchSize 100
 ```
 
-### 3. Chunk transcripts (no LLM)
+| Flag                    | Description               |
+| ----------------------- | ------------------------- |
+| `--file <name>`         | Process specific video    |
+| `--all`                 | Process all videos        |
+| `--force`               | Reprocess even if exists  |
+| `--batchSize <n>`       | Control batch size        |
+| `--gen-model <model>`   | Override generation model |
+| `--embed-model <model>` | Override embedding model  |
+
+## Processing Stages
+
+### 1. Chunking (`chunk-transcripts.ts`)
+
+Adaptive chunking based on:
+
+- Target duration: 120s (configurable)
+- Max duration: 180s
+- Min duration: 45s
+- Max words: 350
+- Sentence boundaries
+- 4-second gap detection
+- 15s overlap between chunks
+
+Creates `chunks` table entries with hash-based deduplication.
+
+### 2. Summarization (`summarize-chunks.ts`)
+
+Generates versioned summaries:
+
+- Title (descriptive, 3-7 words)
+- Summary (2-3 sentences)
+- Stored in `chunk_summaries` with run ID tracking
+- Prompt hash for reproducibility
+
+Uses TUI for progress display.
+
+### 3. Entity Extraction (`extract-entities.ts`)
+
+Extracts grounded mentions with evidence:
+
+- **Types**: PERSON, ROLE, PLACE, SETTING, ACTIVITY
+- Evidence must be present in chunk text
+- Time bounds validated against chunk
+- Confidence levels: high/medium/low
+
+Stored in `chunk_entity_mentions` with:
+
+- `raw_text` - As extracted
+- `evidence_text` - Grounding snippet
+- `start_time`/`end_time` - Temporal bounds
+- `model`/`prompt_hash`/`run_id` - Versioning
+
+Tracks status in `chunk_extraction_status` (pending/success/failed/empty).
+
+### 4. Entity Clustering (`cluster-*.ts`)
+
+Automated AI clustering (no user interaction):
+
+1. Queries unclustered mentions from `chunk_entity_mentions`
+2. Groups by entity type (PERSON/ROLE, PLACE/SETTING, ACTIVITY)
+3. Batches similar raw names
+4. AI determines canonical names
+5. Updates tables:
+   - `entities` - Canonical entries
+   - `entity_variants` - Raw→canonical mapping
+   - `chunk_entity_mentions.entity_id` - Link to canonical
+
+Example: "Johnny", "John", "Jon" → canonical "John"
+
+Progress displayed via ClusterTUI (not interactive).
+
+### 5. Materialization (`materialize-entities.ts`)
+
+Aggregates relationships:
+
+- `chunk_entities` - Count mentions per chunk
+- `video_entities` - Count mentions per video
+
+Enables efficient entity-based retrieval.
+
+### 6. Embedding (`embed-chunks.ts`)
+
+Multi-field embeddings combining:
+
+```
+TITLE: {chunk_title}
+SUMMARY: {chunk_summary}
+ENTITIES: {entity1, entity2, ...}
+TRANSCRIPT: {chunk_text}
+```
+
+Stored in `vec_chunks` (sqlite-vec virtual table).
+
+### 7. FTS Index (`rebuild-fts-chunks.ts`)
+
+Rebuilds FTS5 index on chunk text for BM25 search.
+
+## Key Source Files
+
+| File                          | Purpose                         |
+| ----------------------------- | ------------------------------- |
+| `src/chunk-transcripts.ts`    | Adaptive chunking logic         |
+| `src/summarize-chunks.ts`     | AI summary generation           |
+| `src/extract-entities.ts`     | Entity extraction with evidence |
+| `src/cluster-*.ts`            | AI clustering (3 entity types)  |
+| `src/cluster-engine.ts`       | Shared clustering logic         |
+| `src/materialize-entities.ts` | Relationship aggregation        |
+| `src/embed-chunks.ts`         | Vector embedding generation     |
+| `src/rebuild-fts-chunks.ts`   | FTS5 index management           |
+| `src/seed-metadata.ts`        | Video import from JSON          |
+| `src/tui.ts`                  | Progress display for batch ops  |
+| `src/cluster-tui.ts`          | Progress display for clustering |
+| `src/prompts.ts`              | AI prompts and schemas          |
+
+## Input Data
+
+### WhisperX JSON Format
+
+Located in `data/transcripts/{video-name}.json`:
+
+```json
+{
+  "segments": [
+    {
+      "start": 0.031,
+      "end": 23.895,
+      "text": "Greg, how much are you going to take...",
+      "words": [
+        { "word": "Greg,", "start": 0.031, "end": 10.11, "score": 0.48 }
+      ]
+    }
+  ]
+}
+```
+
+### mapping.json
+
+Maps filenames to Google Drive IDs in `data/mapping.json`:
+
+```json
+{
+  "1995-2.m4v": "0B-xxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "1998-99-15.m4v": "0B-yyyyyyyyyyyyyyyyyyyyyyyyyy"
+}
+```
+
+## Testing Changes
+
+Always test on a single file first:
 
 ```bash
-bun run ingest:chunk --all
+# Test chunking
+bun run ingest:chunk --file "1995-2.m4v"
+
+# Verify output
+sqlite3 data/hv-rag.db "SELECT * FROM chunks WHERE video_id = (SELECT id FROM videos WHERE filename = '1995-2.m4v') LIMIT 5;"
 ```
 
-Defaults:
+## Iterative Workflow
 
-- targetDurationSec=120, maxDurationSec=180, minDurationSec=45
-- overlapSec=15, maxWords=350, gapSec=4
-
-### 4. Summarize chunks (LLM)
-
-Interleaved global queue with TUI for max throughput. Use `--verbose` to disable the TUI.
-
-```bash
-bun run ingest:summarize-chunks --all --concurrency 16
-```
-
-### 5. Extract entities (LLM)
-
-```bash
-bun run ingest:extract-entities --all --batch-size 50 --concurrency 8
-```
-
-### 6. Cluster and canonicalize entities (LLM)
-
-These commands write canonical entities + variants and update `chunk_entity_mentions.entity_id`.
-
-```bash
-bun run cluster-participants
-bun run cluster-locations
-bun run cluster-activities
-```
-
-### 7. Materialize entity links (no LLM)
-
-```bash
-bun run ingest:materialize-entities
-```
-
-### 8. Rebuild FTS for chunks (no LLM)
-
-```bash
-bun run ingest:rebuild-fts-chunks
-```
-
-### 9. Embed chunks (embedding model)
-
-```bash
-bun run ingest:embed-chunks --all --summary-type chunk
-```
-
-### 10. Optional: Global summaries (LLM)
-
-```bash
-bun run ingest:global --all
-```
-
-### 11. Optional: Temporal metadata (LLM)
-
-```bash
-bun run ingest:temporal --all
-```
-
-### 12. Optional: Embed global video summaries
-
-```bash
-bun run embed-videos --all
-```
-
-## Resumability
-
-Most LLM stages track `run_id` and `prompt_hash` for safe retries. If you want consistent resumability, pass a stable `--run-id` or reuse the same prompt hash (defaults to prompt hash when run-id is omitted).
-
-## Resetting the Database
-
-To wipe the DB and start fresh (from this package directory):
-
-```bash
-bun run clean
-```
-
-This deletes `data/hv-rag.db`. `mapping.json` is preserved.
-
-## Command Reference
-
-| Command                       | Description                                      |
-| :---------------------------- | :----------------------------------------------- |
-| `init-db`                     | Create core tables + FTS indexes.                |
-| `init-vec`                    | Create vector tables (vec0).                     |
-| `seed`                        | Load transcripts and metadata into the DB.       |
-| `ingest:chunk`                | Build adaptive transcript chunks.                |
-| `ingest:summarize-chunks`     | LLM chunk summaries (interleaved + TUI).         |
-| `ingest:extract-entities`     | LLM evidence-grounded mentions.                  |
-| `cluster-participants`        | Canonicalize PERSON/ROLE entities.               |
-| `cluster-locations`           | Canonicalize PLACE/SETTING entities.             |
-| `cluster-activities`          | Canonicalize ACTIVITY entities.                  |
-| `ingest:materialize-entities` | Build chunk_entities and video_entities.         |
-| `ingest:rebuild-fts-chunks`   | Rebuild FTS over chunks + summaries + entities.  |
-| `ingest:embed-chunks`         | Embed chunk text for vector search.              |
-| `ingest:global`               | LLM global video summaries from chunk summaries. |
-| `ingest:temporal`             | LLM temporal extraction from chunk summaries.    |
-| `embed-videos`                | Embed global video summaries.                    |
-| `backup`                      | Create a timestamped backup of DB + registries.  |
-| `clean`                       | Delete the DB artifacts.                         |
-| `verify`                      | Validate metadata consistency.                   |
-
-## Common CLI Options
-
-- `--all` or `--file <filename>`: Select videos to process.
-- `--force`: Re-process and overwrite existing rows.
-- `--concurrency <n>`: Parallel LLM requests (default varies by command).
-- `--batch-size <n>`: Batch size for LLM calls (where supported).
-- `--run-id <id>`: Deterministic run identifier for resumability.
-- `--summary-type <type>`: Summary flavor (default: `scene`).
-
-## Requirements
-
-- **Transcripts**: `data/transcripts/*.json` (WhisperX output).
-- **Mapping**: `data/mapping.json` for filename-to-ID mapping.
-- **AI Service**: vLLM / OpenAI-compatible API running locally.
-- **SQLite**: Database at `data/hv-rag.db`.
+1. Make code changes
+2. Test on single video with `--file`
+3. Verify database output
+4. Run full pipeline only after validation
