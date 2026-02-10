@@ -22,11 +22,105 @@ import { type Source, type StreamChunk } from './schemas.ts';
 
 type Db = BunSQLiteDatabase<typeof schema>;
 
+interface ArchivistConfig {
+  keywordBoost?: number;
+  entityBoost?: number;
+  temporalBoost?: number;
+  temporalPenalty?: number;
+  filenameBoost?: number;
+  rrfK?: number;
+}
+
 interface EntityMatch {
   id: number;
   name: string;
   entityType: string;
   subtype: string | null;
+}
+
+interface FilenameMatch {
+  filename: string;
+  videoId: number;
+  basename: string;
+}
+
+class FilenameIndex {
+  private filenames: FilenameMatch[] = [];
+  private loaded = false;
+
+  async load(db: Db) {
+    const rows = db
+      .select({ id: videos.id, filename: videos.filename })
+      .from(videos)
+      .all();
+
+    this.filenames = rows
+      .map((row) => ({
+        filename: row.filename,
+        videoId: row.id,
+        basename: row.filename.replace(/\.[^/.]+$/, ''),
+      }))
+      .sort((a, b) => b.filename.length - a.filename.length);
+
+    this.loaded = true;
+  }
+
+  detect(query: string): FilenameMatch[] {
+    if (!this.loaded) return [];
+
+    const lowerQuery = query.toLowerCase();
+    const matches: FilenameMatch[] = [];
+    const matchedRanges: Array<{ start: number; end: number }> = [];
+
+    for (const entry of this.filenames) {
+      const fullPattern = new RegExp(
+        `\\b${this.escapeRegex(entry.filename)}\\b`,
+        'i',
+      );
+      const fullMatch = lowerQuery.match(fullPattern);
+
+      if (fullMatch) {
+        const start = fullMatch.index!;
+        const end = start + fullMatch[0].length;
+
+        const overlaps = matchedRanges.some(
+          (r) => start < r.end && end > r.start,
+        );
+
+        if (!overlaps) {
+          matches.push(entry);
+          matchedRanges.push({ start, end });
+          continue;
+        }
+      }
+
+      const basePattern = new RegExp(
+        `\\b${this.escapeRegex(entry.basename)}\\b`,
+        'i',
+      );
+      const baseMatch = lowerQuery.match(basePattern);
+
+      if (baseMatch) {
+        const start = baseMatch.index!;
+        const end = start + baseMatch[0].length;
+
+        const overlaps = matchedRanges.some(
+          (r) => start < r.end && end > r.start,
+        );
+
+        if (!overlaps) {
+          matches.push(entry);
+          matchedRanges.push({ start, end });
+        }
+      }
+    }
+
+    return matches;
+  }
+
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
 }
 
 class EntityIndex {
@@ -106,12 +200,25 @@ export class FamilyArchivist {
     private embedModel: EmbeddingModel,
     private rerankModel: RerankingModel,
     private db: Db,
-  ) {}
+    private config: ArchivistConfig = {},
+  ) {
+    this.config = {
+      keywordBoost: 1.3,
+      entityBoost: 1.5,
+      temporalBoost: 1.5,
+      temporalPenalty: 0.5,
+      filenameBoost: 5.0,
+      rrfK: 60,
+      ...config,
+    };
+  }
 
   private entityIndex = new EntityIndex();
+  private filenameIndex = new FilenameIndex();
 
   async init() {
     await this.entityIndex.load(this.db);
+    await this.filenameIndex.load(this.db);
   }
 
   /**
@@ -420,31 +527,60 @@ export class FamilyArchivist {
    * - Preserves quoted phrases for exact matching
    * - BM25 scoring naturally down-weights common terms, so no stopword filtering needed
    */
-  private constructFtsQuery(query: string): string {
-    const filenameMatch = query.match(/\b\d{4}-[\w-.]+\b/g);
+  private constructFtsQuery(
+    query: string,
+    filenameMatches: FilenameMatch[] = [],
+  ): string {
+    const yearFilenameMatch = query.match(/\b\d{4}-[\w-.]+\b/g);
     let processedQuery = query;
 
-    if (filenameMatch) {
-      filenameMatch.forEach((filename) => {
+    if (yearFilenameMatch) {
+      yearFilenameMatch.forEach((filename) => {
         // Create a phrase version: "1996 97 1 m4v"
         const phrase = `"${filename.replace(/[^\w]/g, ' ')}"`;
         processedQuery = processedQuery.replace(filename, phrase);
       });
     }
 
+    const filenameClauses = filenameMatches.map((match) => {
+      // Use basename for FTS to match video_filename field
+      return `video_filename:"${match.basename}"`;
+    });
+
     // Clean up special chars that FTS5 dislikes, but preserve:
     // - alphanumeric characters
     // - spaces
     // - quotes (for phrase queries)
     // - asterisk (for prefix queries like "swim*")
-    return processedQuery.replace(/[^\w\s"*]/g, ' ').trim();
+    let cleanedQuery = processedQuery.replace(/[^\w\s"*]/g, ' ').trim();
+
+    // Combine with filename clauses
+    if (filenameClauses.length > 0) {
+      cleanedQuery = `${cleanedQuery} OR ${filenameClauses.join(' OR ')}`;
+    }
+
+    return cleanedQuery;
   }
 
   private async hybridSearch(
     query: string,
     entityIds: number[],
   ): Promise<HybridResult[]> {
-    // 1. Vector Search
+    // 1. Detect filenames in query
+    const filenameMatches = this.filenameIndex.detect(query);
+    const targetVideoIds = filenameMatches.map((m) => m.videoId);
+
+    if (filenameMatches.length > 0) {
+      logger.debug(
+        {
+          filenames: filenameMatches.map((m) => m.filename),
+          videoIds: targetVideoIds,
+        },
+        'Detected video filenames in query',
+      );
+    }
+
+    // 2. Vector Search
     const { embedding } = await embed({
       model: this.embedModel,
       value: query,
@@ -452,7 +588,7 @@ export class FamilyArchivist {
     const queryVecJson = JSON.stringify(embedding);
 
     const vectorSql = `
-      SELECT 
+      SELECT
         c.id,
         c.video_id as videoId,
         c.start_time as startTime,
@@ -484,11 +620,11 @@ export class FamilyArchivist {
 
     const vectorResults = this.db.all<HybridResult>(sql.raw(vectorSql));
 
-    // 2. FTS5 Keyword Search (BM25 naturally down-weights common terms)
-    const ftsQuery = this.constructFtsQuery(query);
+    // 3. FTS5 Keyword Search with filename clauses
+    const ftsQuery = this.constructFtsQuery(query, filenameMatches);
     const ftsResults = this.db.all<HybridResult>(
       sql.raw(`
-      SELECT 
+      SELECT
         c.id,
         c.video_id as videoId,
         c.start_time as startTime,
@@ -535,29 +671,48 @@ export class FamilyArchivist {
       fused[r.originalIndex].score = r.score;
     });
 
-    // 5. Post-rerank keyword boost
-    // Boost scores for documents containing exact query key terms (proper nouns, quoted phrases)
+    // 5. Post-rerank boosting (non-compounding)
     const keyTerms = this.extractKeyTerms(query);
-    if (keyTerms.length > 0) {
-      const KEYWORD_BOOST = 1.3;
-      for (const result of fused) {
-        const content = `${result.title || ''} ${result.summary || ''} ${result.text}`;
-        if (this.contentContainsKeyTerms(content, keyTerms)) {
-          result.score = (result.score || 0) * KEYWORD_BOOST;
-        }
-      }
+    const queryYear = this.detectYearInQuery(query);
+    const targetVideoIdSet = new Set(targetVideoIds);
+
+    const FILENAME_BOOST = this.config.filenameBoost!;
+    const KEYWORD_BOOST = this.config.keywordBoost!;
+    const ENTITY_BOOST = this.config.entityBoost!;
+    const TEMPORAL_BOOST = this.config.temporalBoost!;
+    const TEMPORAL_PENALTY = this.config.temporalPenalty!;
+    const MIN_MULTIPLIER = 0.1;
+
+    if (queryYear) {
+      logger.info({ year: queryYear }, 'Detected year in query');
     }
 
-    // Sort by boosted scores
-    fused.sort((a, b) => (b.score || 0) - (a.score || 0));
+    for (const result of fused) {
+      const baseScore = result.score || 0;
+      let multiplier = 1;
 
-    // 6. Additional boost for detected entities
-    if (entityIds.length > 0) {
-      for (const result of fused) {
-        let boost = 1.0;
+      if (targetVideoIdSet.size > 0 && targetVideoIdSet.has(result.videoId)) {
+        multiplier += FILENAME_BOOST - 1;
+        logger.debug(
+          {
+            videoId: result.videoId,
+            chunkId: result.id,
+            boost: FILENAME_BOOST,
+          },
+          'Applied filename video boost',
+        );
+      }
 
+      if (keyTerms.length > 0) {
+        const content = `${result.title || ''} ${result.summary || ''} ${result.text}`;
+        if (this.contentContainsKeyTerms(content, keyTerms)) {
+          multiplier += KEYWORD_BOOST - 1;
+        }
+      }
+
+      if (entityIds.length > 0) {
         const matchedEntities = this.db
-          .select({ entityId: chunkEntities.entityId })
+          .select({ weight: chunkEntities.weight })
           .from(chunkEntities)
           .where(
             and(
@@ -568,40 +723,39 @@ export class FamilyArchivist {
           .all();
 
         if (matchedEntities.length > 0) {
-          boost *= 1.5;
-        }
-
-        if (result.score) {
-          result.score *= boost;
+          const maxWeight = matchedEntities.reduce((max, entry) => {
+            const weight = entry.weight ?? 1;
+            return Math.max(max, weight);
+          }, 0);
+          const normalizedWeight = Math.min(1, Math.max(0, maxWeight));
+          if (normalizedWeight > 0) {
+            multiplier += (ENTITY_BOOST - 1) * normalizedWeight;
+          }
         }
       }
-    }
 
-    // 7. Temporal boosting based on year in query
-    const queryYear = this.detectYearInQuery(query);
-    if (queryYear) {
-      logger.info({ year: queryYear }, 'Detected year in query');
-      for (const result of fused) {
+      if (queryYear) {
         const { videoYearStart, videoYearEnd } = result;
         if (videoYearStart && videoYearEnd) {
-          // Check if query year falls within video's year range
           if (queryYear >= videoYearStart && queryYear <= videoYearEnd) {
-            // Year is in range - boost
-            result.score = (result.score || 0) * 1.5;
+            multiplier += TEMPORAL_BOOST - 1;
           } else {
-            // Calculate distance to nearest edge of range
             const distance = Math.min(
               Math.abs(queryYear - videoYearStart),
               Math.abs(queryYear - videoYearEnd),
             );
             if (distance > 4) {
-              // More than 4 years off - penalty
-              result.score = (result.score || 0) * 0.5;
+              multiplier += TEMPORAL_PENALTY - 1;
             }
-            // Within 4 years: no change (neutral)
           }
         }
       }
+
+      if (multiplier < MIN_MULTIPLIER) {
+        multiplier = MIN_MULTIPLIER;
+      }
+
+      result.score = baseScore * multiplier;
     }
 
     return fused.sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 5);
@@ -611,7 +765,7 @@ export class FamilyArchivist {
     vectorResults: HybridResult[],
     ftsResults: HybridResult[],
   ): HybridResult[] {
-    const k = 60;
+    const k = this.config.rrfK!;
     const scores = new Map<number, number>();
     const resultMap = new Map<number, HybridResult>();
 

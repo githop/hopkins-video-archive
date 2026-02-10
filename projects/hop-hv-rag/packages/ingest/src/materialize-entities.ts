@@ -31,14 +31,32 @@ async function main() {
   logger.info({ runId: runId ?? 'all' }, 'Materializing chunk_entities');
   await db.run(
     sql.raw(`
-      INSERT INTO chunk_entities (chunk_id, entity_id, mention_count)
-      SELECT chunk_id, entity_id, COUNT(*) as mention_count
-      FROM chunk_entity_mentions
-      WHERE entity_id IS NOT NULL
-      ${runFilter}
-      GROUP BY chunk_id, entity_id
+      WITH counts AS (
+        SELECT chunk_id, entity_id, COUNT(*) as mention_count
+        FROM chunk_entity_mentions
+        WHERE entity_id IS NOT NULL
+        ${runFilter}
+        GROUP BY chunk_id, entity_id
+      ),
+      maxes AS (
+        SELECT chunk_id, MAX(mention_count) as max_mentions
+        FROM counts
+        GROUP BY chunk_id
+      )
+      INSERT INTO chunk_entities (chunk_id, entity_id, mention_count, weight)
+      SELECT
+        c.chunk_id,
+        c.entity_id,
+        c.mention_count,
+        CASE
+          WHEN m.max_mentions IS NULL OR m.max_mentions <= 0 THEN NULL
+          ELSE LOG(1 + c.mention_count) / LOG(1 + m.max_mentions)
+        END as weight
+      FROM counts c
+      JOIN maxes m ON m.chunk_id = c.chunk_id
       ON CONFLICT(chunk_id, entity_id) DO UPDATE SET
-        mention_count = excluded.mention_count
+        mention_count = excluded.mention_count,
+        weight = excluded.weight
     `),
   );
 

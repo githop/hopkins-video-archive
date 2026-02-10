@@ -58,5 +58,35 @@
     "category": "Specific Topic Retrieval",
     "prompt": "What is KH Talk?",
     "expected": "Should describe the KH Talk, participants, show topics, etc"
+  },
+  {
+    "id": "EVAL-011",
+    "category": "Filename Detection - CamelCase",
+    "prompt": "What happened in KarenMontage.m4v?",
+    "expected": "Should return 80%+ results from KarenMontage.m4v, not other videos with Karen"
+  },
+  {
+    "id": "EVAL-012",
+    "category": "Filename Detection - Year Only",
+    "prompt": "Tell me about 2003.m4v",
+    "expected": "Should prioritize results from 2003.m4v file"
+  },
+  {
+    "id": "EVAL-013",
+    "category": "Filename Detection - Basename Only",
+    "prompt": "What is in osu?",
+    "expected": "Should detect osu.m4v from basename match"
+  },
+  {
+    "id": "EVAL-014",
+    "category": "Filename vs Entity Disambiguation",
+    "prompt": "What does Karen say in KarenMontage.m4v?",
+    "expected": "Should filter to KarenMontage.m4v and find Karen's dialogue within it"
+  },
+  {
+    "id": "EVAL-015",
+    "category": "Filename Detection - Long Names",
+    "prompt": "Show me tommypolevault.m4v",
+    "expected": "Should detect tommypolevault.m4v"
   }
 ]
