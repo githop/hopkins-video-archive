@@ -138,14 +138,8 @@ export class FamilyArchivist {
 
     // 2. Stream generation with reasoning
     const system = this.getSystemPrompt(context);
-
-    logger.debug(
-      {
-        system,
-        prompt: userQuery,
-      },
-      '🔍 RAG Context Payload',
-    );
+    logger.debug({ prompt: userQuery });
+    logger.debug(system);
 
     const result = streamText({
       model: this.genModel,
@@ -323,7 +317,6 @@ export class FamilyArchivist {
     return [
       'You are a professional Family Historian and Video Archivist.',
       "Analyze the provided archive fragments to answer the user's question.",
-      '',
       'GUIDELINES:',
       '1. Use ONLY the provided context to answer the question.',
       '2. Cite sources using [1], [2], [3] etc. when referencing information.',
