@@ -17,6 +17,7 @@
     "download": "bun run src/download.ts",
     "transcribe": "bun run src/transcribe.ts",
     "organize": "bun run src/organize.ts",
+    "summaries": "bun run src/summaries.ts",
     "auth": "bun run src/authenticate.ts",
     "map": "bun run src/map.ts",
     "thumbs": "bun run src/thumbnails.ts",

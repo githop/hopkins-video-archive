@@ -312,6 +312,56 @@ export class DriveService {
   }
 
   /**
+   * Find a file by name and mimeType in a parent folder
+   */
+  async findFileByMimeType(name: string, parentId: string, mimeType: string): Promise<string | null> {
+    try {
+      const res = await this.drive.files.list({
+        q: `name = '${name.replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType = '${mimeType}' and trashed = false`,
+        fields: "files(id)",
+      });
+      return res.data.files?.[0]?.id || null;
+    } catch (err) {
+      Logger.error(`Failed to find file ${name} with mimeType ${mimeType}`, err);
+      throw err;
+    }
+  }
+
+  /**
+   * Upload content as a Google Doc (converts from text)
+   */
+  async uploadAsGoogleDoc(name: string, parentId: string, content: string): Promise<void> {
+    try {
+      const googleDocMimeType = "application/vnd.google-apps.document";
+      const existingId = await this.findFileByMimeType(name, parentId, googleDocMimeType);
+      
+      const media = {
+        mimeType: "text/plain",
+        body: Readable.from(Buffer.from(content)),
+      };
+
+      if (existingId) {
+        await this.drive.files.update({
+          fileId: existingId,
+          media,
+        });
+      } else {
+        await this.drive.files.create({
+          requestBody: {
+            name,
+            mimeType: googleDocMimeType,
+            parents: [parentId],
+          },
+          media,
+        });
+      }
+    } catch (err) {
+      Logger.error(`Failed to upload Google Doc ${name} to folder ${parentId}`, err);
+      throw err;
+    }
+  }
+
+  /**
    * Get all files in a specific folder
    */
   async getFolderContents(folderId: string): Promise<drive_v3.Schema$File[]> {
