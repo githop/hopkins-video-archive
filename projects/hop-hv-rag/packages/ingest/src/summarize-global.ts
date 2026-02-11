@@ -6,47 +6,34 @@ import {
   type Video,
 } from '@hop-hv-rag/db';
 import { getGenModel } from '@hop-hv-rag/ai';
-import { logger } from '@hop-hv-rag/core';
+import { formatTimestamp, logger } from '@hop-hv-rag/core';
 import { generateText, type LanguageModel } from 'ai';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { GLOBAL_SUMMARY_PROMPT } from './prompts.ts';
 import { GenModelFlagOption, parseGenModelFlag } from './cli-flags.ts';
+import { GlobalSummaryTUI } from './global-summary-tui.ts';
 
-/**
- * Configuration & Constants
- */
 const DATA_DIR = resolve(process.cwd(), '../../data');
 const DB_PATH = `${DATA_DIR}/hv-rag.db`;
 
-/**
- * GlobalArchivist: Generates a global "Archival Abstract" for a video
- * by synthesizing its constituent chunk summaries.
- */
 class GlobalArchivist {
   constructor(
     private db: ReturnType<typeof createDb>,
     private model: LanguageModel,
   ) {}
 
-  /**
-   * Main entry point for processing a video
-   */
-  async processVideo(video: Video, options: { force?: boolean }) {
-    // If not forced, check if summary exists (idempotency)
+  async processVideo(
+    video: Video,
+    options: { force?: boolean },
+  ): Promise<number> {
     if (!options.force && video.globalSummary) {
-      logger.info(
-        { videoId: video.id, filename: video.filename },
-        '⏭️  Global summary exists. Skipping.',
-      );
-      return;
+      logger.info({ videoId: video.id }, '⏭️  Skipping existing summary');
+      return 0;
     }
 
-    logger.info(
-      { videoId: video.id, filename: video.filename },
-      '🎥 Generating global summary',
-    );
+    logger.info({ videoId: video.id }, '🎥 Summarizing video');
 
     const summaryRows = await this.db
       .select({
@@ -65,22 +52,10 @@ class GlobalArchivist {
       )
       .orderBy(desc(chunkSummaries.id));
 
-    const latestByChunk = new Map<
-      number,
-      {
-        title: string;
-        summary: string;
-        startTime: number;
-      }
-    >();
-
+    const latestByChunk = new Map<number, any>();
     for (const row of summaryRows) {
       if (!latestByChunk.has(row.chunkId)) {
-        latestByChunk.set(row.chunkId, {
-          title: row.title,
-          summary: row.summary,
-          startTime: row.startTime,
-        });
+        latestByChunk.set(row.chunkId, row);
       }
     }
 
@@ -89,94 +64,41 @@ class GlobalArchivist {
     );
 
     if (chunkSummariesSorted.length === 0) {
-      logger.warn(
-        { videoId: video.id },
-        '⚠️  No chunk summaries found. Cannot generate global summary.',
-      );
-      return;
+      logger.warn({ videoId: video.id }, '⚠️  No chunk summaries found');
+      return 0;
     }
 
-    try {
-      const summary = await this.generateGlobalSummary(
-        video,
-        chunkSummariesSorted,
-      );
-
-      // Update the video record
-      await this.db
-        .update(videos)
-        .set({
-          globalSummary: summary,
-        })
-        .where(eq(videos.id, video.id));
-
-      logger.info(
-        { videoId: video.id, summaryLength: summary.length },
-        '✅ Global summary saved',
-      );
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error(
-        { videoId: video.id, error: message },
-        '❌ Failed to generate global summary',
-      );
-    }
-  }
-
-  /**
-   * Orchestrates the LLM call
-   */
-  private async generateGlobalSummary(
-    video: Video,
-    summaryRows: Array<{ title: string; summary: string; startTime: number }>,
-  ): Promise<string> {
-    // Construct context from chunks
-    const chunkContext = summaryRows
-      .map((row) => {
-        const time = this.formatTime(row.startTime);
-        return `[${time}] ${row.title || 'Untitled'}: ${row.summary}`;
-      })
+    const chunkContext = chunkSummariesSorted
+      .map(
+        (row) =>
+          `[${formatTimestamp(row.startTime)}] ${row.title || 'Untitled'}: ${row.summary}`,
+      )
       .join('\n');
 
-    const systemPrompt = this.getSystemPrompt();
     const userPrompt = `Video Title: ${video.title || video.filename}
 Recorded Date: ${video.recordedAt || 'Unknown'}
 
 CHUNK LOG:
 ${chunkContext}`;
 
-    logger.debug(
-      {
-        videoId: video.id,
-        sceneCount: summaryRows.length,
-        promptLength: userPrompt.length,
-      },
-      '🔍 LLM Context Payload',
-    );
-
     const { text } = await generateText({
       model: this.model,
-      system: systemPrompt,
+      system: GLOBAL_SUMMARY_PROMPT,
       prompt: userPrompt,
     });
 
-    return text.trim();
-  }
+    const summary = text.trim();
 
-  private formatTime(seconds: number): string {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
+    await this.db
+      .update(videos)
+      .set({ globalSummary: summary })
+      .where(eq(videos.id, video.id));
 
-  private getSystemPrompt(): string {
-    return GLOBAL_SUMMARY_PROMPT;
+    logger.info({ videoId: video.id }, '✅ Summary saved');
+    return chunkSummariesSorted.length;
   }
 }
 
-/**
- * CLI Entry Point
- */
 async function main() {
   const { values } = parseArgs({
     args: Bun.argv.slice(2),
@@ -186,20 +108,20 @@ async function main() {
       force: { type: 'boolean', default: false },
       'gen-model': GenModelFlagOption,
       concurrency: { type: 'string', default: '4' },
+      verbose: { type: 'boolean', default: false },
     },
     strict: true,
   });
 
   const db = createDb(DB_PATH);
-
   const archivist = new GlobalArchivist(
     db,
     getGenModel(parseGenModelFlag(values['gen-model'])),
   );
 
-  const concurrency = parseInt(values.concurrency!);
+  const maxConcurrency = parseInt(values.concurrency!, 10);
+  const isVerbose = Boolean(values.verbose);
 
-  // Determine target videos
   let targetVideos: Video[] = [];
   if (values.file) {
     targetVideos = await db
@@ -209,49 +131,108 @@ async function main() {
   } else if (values.all) {
     targetVideos = await db.select().from(videos);
   } else {
-    logger.error(
-      'Usage: bun ingest:global --file <filename> | --all [--force] [--gen-model <name>] [--concurrency <n>]',
+    console.error(
+      'Usage: bun ingest:global --file <filename> | --all [--force] [--verbose]',
     );
     process.exit(1);
   }
 
-  logger.info(
-    { videoCount: targetVideos.length, concurrency },
-    '🎬 Global Archivist starting...',
-  );
+  let totalChunks = 0;
+  for (const video of targetVideos) {
+    const chunkCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(chunks)
+      .where(eq(chunks.videoId, video.id))
+      .get();
+    totalChunks += chunkCount?.count ?? 0;
+  }
+
+  const tui = isVerbose ? null : new GlobalSummaryTUI();
+
+  if (tui) {
+    logger.level = 'silent';
+    await tui.start(targetVideos.length, totalChunks, maxConcurrency);
+  }
+
+  const stats = {
+    totalVideos: targetVideos.length,
+    completedVideos: 0,
+    totalChunks,
+    completedChunks: 0,
+    errors: [] as any[],
+    warnings: [] as any[],
+    failedVideos: [] as any[],
+  };
 
   const activePromises = new Set<Promise<void>>();
 
   for (const video of targetVideos) {
+    const startTime = Date.now();
     const promise = archivist
-      .processVideo(video, {
-        force: values.force,
-      })
-      .catch((error) => {
-        logger.error(
-          {
+      .processVideo(video, { force: values.force })
+      .then((chunkCount) => {
+        stats.completedVideos++;
+        stats.completedChunks += chunkCount;
+        if (tui) {
+          tui.recordVideoComplete({
             videoId: video.id,
-            error: error instanceof Error ? error.message : String(error),
-          },
-          '❌ Critical error processing video',
-        );
+            filename: video.filename,
+            chunkCount,
+            durationMs: Date.now() - startTime,
+            timestamp: Date.now(),
+            hadError: false,
+          });
+          tui.updateProgress(stats.completedVideos, stats.completedChunks);
+        } else {
+          logger.info({ filename: video.filename }, '✅ Video complete');
+        }
+      })
+      .catch((err) => {
+        stats.completedVideos++;
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        stats.errors.push({ filename: video.filename, error: errorMessage });
+        stats.failedVideos.push({ filename: video.filename });
+        if (tui) {
+          tui.recordVideoComplete({
+            videoId: video.id,
+            filename: video.filename,
+            chunkCount: 0,
+            durationMs: Date.now() - startTime,
+            timestamp: Date.now(),
+            hadError: true,
+            errorMessage,
+          });
+          tui.updateProgress(stats.completedVideos, stats.completedChunks);
+        } else {
+          logger.error(
+            { filename: video.filename, error: errorMessage },
+            '❌ Video error',
+          );
+        }
+      })
+      .finally(() => {
+        activePromises.delete(promise);
+        if (tui) tui.setInFlightCount(activePromises.size);
       });
 
     activePromises.add(promise);
+    if (tui) tui.setInFlightCount(activePromises.size);
 
-    promise.finally(() => activePromises.delete(promise));
-
-    if (activePromises.size >= concurrency) {
+    if (activePromises.size >= maxConcurrency) {
       await Promise.race(activePromises);
     }
   }
 
   await Promise.all(activePromises);
 
-  logger.info('🏁 All videos processed.');
+  if (tui) {
+    tui.finalize(stats);
+  } else {
+    logger.info('🏁 All videos processed.');
+  }
 }
 
-main().catch((error: unknown) => {
-  logger.error({ error }, 'Fatal error in main');
+main().catch((err) => {
+  logger.error(err);
   process.exit(1);
 });

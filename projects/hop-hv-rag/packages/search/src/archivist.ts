@@ -8,7 +8,7 @@ import {
   type schema,
 } from '@hop-hv-rag/db';
 import { validateEntities } from '@hop-hv-rag/db/validation';
-import { logger } from '@hop-hv-rag/core';
+import { formatTimestamp, logger } from '@hop-hv-rag/core';
 import {
   streamText,
   embed,
@@ -316,9 +316,7 @@ export class FamilyArchivist {
       );
 
       // Format timestamp
-      const minutes = Math.floor(r.startTime / 60);
-      const seconds = Math.floor(r.startTime % 60);
-      const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+      const formatted = formatTimestamp(r.startTime);
 
       sources.push({
         chunkId: r.id,

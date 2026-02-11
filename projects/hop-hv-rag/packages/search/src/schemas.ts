@@ -23,7 +23,7 @@ export const SourceSchema = z.object({
   timestamp: z.object({
     startSeconds: z.number(),
     endSeconds: z.number(),
-    formatted: z.string(), // "MM:SS"
+    formatted: z.string(), // "HH:MM:SS"
   }),
   participants: z.array(EntitySchema),
   locations: z.array(EntitySchema),
