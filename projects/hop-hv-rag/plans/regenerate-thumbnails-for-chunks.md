@@ -165,8 +165,8 @@ function getThumbnailPath(
   sceneStartTime: number,
   timestamp: number,
 ): { dir: string; fullPath: string } {
-  const videoBase = basename(videoFilename, ".m4v").replace(".mp4", "");
-  const timestampStr = String(Math.floor(sceneStartTime)).padStart(5, "0");
+  const videoBase = basename(videoFilename, '.m4v').replace('.mp4', '');
+  const timestampStr = String(Math.floor(sceneStartTime)).padStart(5, '0');
 
   const dir = join(CONFIG.THUMBNAILS_DIR, videoBase);
   const filename = `${timestampStr}.jpg`;
@@ -181,7 +181,7 @@ function getThumbnailPath(
   chunkStartTime: number,
 ): { dir: string; fullPath: string } {
   const videoBase = videoFilename.replace(/\.[^/.]+$/, '');
-  const timestampStr = String(Math.floor(chunkStartTime)).padStart(5, "0");
+  const timestampStr = String(Math.floor(chunkStartTime)).padStart(5, '0');
 
   const dir = join(CONFIG.THUMBNAILS_DIR, videoBase);
   const filename = `${timestampStr}.jpg`;
@@ -201,102 +201,95 @@ Update all references from scenes to chunks in the main function. The key change
 
 ```typescript
 // Line 96-97 — CHANGE:
-  const scenes = getScenes(db);
+const scenes = getScenes(db);
 // TO:
-  const chunks = getChunks(db);
+const chunks = getChunks(db);
 
 // Lines 99-101 — CHANGE:
-  Logger.info(
-    `Found ${scenes.length} scenes across ${new Set(scenes.map((s) => s.video_id)).size} videos`,
-  );
+Logger.info(
+  `Found ${scenes.length} scenes across ${new Set(scenes.map((s) => s.video_id)).size} videos`,
+);
 // TO:
-  Logger.info(
-    `Found ${chunks.length} chunks across ${new Set(chunks.map((c) => c.video_id)).size} videos`,
-  );
+Logger.info(
+  `Found ${chunks.length} chunks across ${new Set(chunks.map((c) => c.video_id)).size} videos`,
+);
 
 // Lines 103-112 — CHANGE:
-  let filteredScenes = scenes;
-  if (videoFilter) {
-    filteredScenes = scenes.filter((s) =>
-      s.video_filename.includes(videoFilter),
-    );
-    Logger.info(
-      `Filtered to ${filteredScenes.length} scenes matching "${videoFilter}"`,
-    );
-  }
+let filteredScenes = scenes;
+if (videoFilter) {
+  filteredScenes = scenes.filter((s) => s.video_filename.includes(videoFilter));
+  Logger.info(
+    `Filtered to ${filteredScenes.length} scenes matching "${videoFilter}"`,
+  );
+}
 // TO:
-  let filtered = chunks;
-  if (videoFilter) {
-    filtered = chunks.filter((c) =>
-      c.video_filename.includes(videoFilter),
-    );
-    Logger.info(
-      `Filtered to ${filtered.length} chunks matching "${videoFilter}"`,
-    );
-  }
+let filtered = chunks;
+if (videoFilter) {
+  filtered = chunks.filter((c) => c.video_filename.includes(videoFilter));
+  Logger.info(
+    `Filtered to ${filtered.length} chunks matching "${videoFilter}"`,
+  );
+}
 
 // Lines 122-186 — CHANGE all occurrences of `filteredScenes` to `filtered`,
 // `scene` to `chunk`, and `scene.scene_id` to `chunk.chunk_id`:
-  await Promise.all(
-    filtered.map(async (chunk) => {
-      await semaphore.acquire();
+await Promise.all(
+  filtered.map(async (chunk) => {
+    await semaphore.acquire();
+
+    try {
+      const videoPath = join(CONFIG.VIDEOS_DIR, chunk.video_filename);
+
+      const videoFile = Bun.file(videoPath);
+      if (!(await videoFile.exists())) {
+        Logger.warn(
+          `Video file not found: ${videoPath} (skipping chunk ${chunk.chunk_id})`,
+        );
+        skipped++;
+        return;
+      }
+
+      // Extract frame at midpoint, name file by start time
+      const timestamp = getThumbnailTimestamp(chunk.start_time, chunk.end_time);
+      const { dir, fullPath } = getThumbnailPath(
+        chunk.video_filename,
+        chunk.start_time,
+      );
+
+      if (await thumbnailExists(fullPath)) {
+        Logger.info(`Thumbnail exists: ${fullPath}`);
+        skipped++;
+        return;
+      }
+
+      if (dryRun) {
+        Logger.info(
+          `[DRY RUN] Would create: ${fullPath} at ${timestamp.toFixed(1)}s`,
+        );
+        processed++;
+        return;
+      }
+
+      await mkdir(dir, { recursive: true });
 
       try {
-        const videoPath = join(CONFIG.VIDEOS_DIR, chunk.video_filename);
+        await FFMPEG.extractThumbnail(videoPath, timestamp, fullPath);
 
-        const videoFile = Bun.file(videoPath);
-        if (!(await videoFile.exists())) {
-          Logger.warn(
-            `Video file not found: ${videoPath} (skipping chunk ${chunk.chunk_id})`,
-          );
-          skipped++;
-          return;
-        }
-
-        // Extract frame at midpoint, name file by start time
-        const timestamp = getThumbnailTimestamp(
-          chunk.start_time,
-          chunk.end_time,
+        processed++;
+        Logger.info(
+          `✓ ${chunk.video_filename} [${chunk.chunk_id}]: ${fullPath}`,
         );
-        const { dir, fullPath } = getThumbnailPath(
-          chunk.video_filename,
-          chunk.start_time,
+      } catch (error) {
+        Logger.error(
+          `Failed to extract thumbnail for chunk ${chunk.chunk_id}: ${error}`,
         );
-
-        if (await thumbnailExists(fullPath)) {
-          Logger.info(`Thumbnail exists: ${fullPath}`);
-          skipped++;
-          return;
-        }
-
-        if (dryRun) {
-          Logger.info(
-            `[DRY RUN] Would create: ${fullPath} at ${timestamp.toFixed(1)}s`,
-          );
-          processed++;
-          return;
-        }
-
-        await mkdir(dir, { recursive: true });
-
-        try {
-          await FFMPEG.extractThumbnail(videoPath, timestamp, fullPath);
-
-          processed++;
-          Logger.info(
-            `✓ ${chunk.video_filename} [${chunk.chunk_id}]: ${fullPath}`,
-          );
-        } catch (error) {
-          Logger.error(
-            `Failed to extract thumbnail for chunk ${chunk.chunk_id}: ${error}`,
-          );
-          failed++;
-        }
-      } finally {
-        semaphore.release();
+        failed++;
       }
-    }),
-  );
+    } finally {
+      semaphore.release();
+    }
+  }),
+);
 ```
 
 ### Step 5: Update the JSDoc comment at the top of the file
@@ -329,9 +322,9 @@ Update all references from scenes to chunks in the main function. The key change
 
 ```typescript
 // Line 9 — CHANGE:
-import { join, basename } from "node:path";
+import { join, basename } from 'node:path';
 // TO:
-import { join } from "node:path";
+import { join } from 'node:path';
 ```
 
 `basename` was only used in the old `getThumbnailPath` for extension stripping. The new version uses a regex instead.
@@ -375,11 +368,13 @@ bun run thumbs
 #### 7e. Verify output (safe — read-only)
 
 After generation, the user and agent can collaboratively verify:
+
 - Correct number of thumbnails created (should match chunk count per video)
 - Filenames match `Math.floor(chunk.start_time).padStart(5, '0')` pattern
 - Images are valid JPEGs at 320x240 showing mid-chunk content
 
 The full run will:
+
 - Query 2,043 chunks from the database
 - Extract a frame at the midpoint of each chunk
 - Name each file by `Math.floor(chunk.start_time).padStart(5, '0')`
@@ -390,9 +385,9 @@ The full run will:
 
 ## Files Modified (Summary)
 
-| # | File | Action |
-|---|------|--------|
-| 1 | `projects/whisper-project/src/thumbnails.ts` | **EDIT** — rename `SceneRow` to `ChunkRow`, `getScenes` to `getChunks`, update SQL from `scenes` to `chunks`, fix basename extraction, update all scene references to chunk |
+| #   | File                                         | Action                                                                                                                                                                      |
+| --- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `projects/whisper-project/src/thumbnails.ts` | **EDIT** — rename `SceneRow` to `ChunkRow`, `getScenes` to `getChunks`, update SQL from `scenes` to `chunks`, fix basename extraction, update all scene references to chunk |
 
 This is a single-file change. The FFmpeg extraction (`ffmpeg.ts`), config (`config.ts`), and CLI flags are all unchanged.
 

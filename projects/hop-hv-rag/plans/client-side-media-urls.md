@@ -25,11 +25,11 @@ The transcript URL is already built client-side in `VideoModal.tsx`. This plan c
 
 ### URL Patterns (all deterministic)
 
-| Asset | Pattern | Example |
-|-------|---------|---------|
-| Thumbnail | `/thumbnails/<basename>/<padded-start>.jpg` | `/thumbnails/1984-1985/00095.jpg` |
-| Video | `/videos/<filename>#t=<seconds>` | `/videos/1984-1985.m4v#t=95` |
-| Transcript | `/transcripts/<basename>.vtt` | `/transcripts/1984-1985.vtt` |
+| Asset      | Pattern                                     | Example                           |
+| ---------- | ------------------------------------------- | --------------------------------- |
+| Thumbnail  | `/thumbnails/<basename>/<padded-start>.jpg` | `/thumbnails/1984-1985/00095.jpg` |
+| Video      | `/videos/<filename>#t=<seconds>`            | `/videos/1984-1985.m4v#t=95`      |
+| Transcript | `/transcripts/<basename>.vtt`               | `/transcripts/1984-1985.vtt`      |
 
 Where `<basename>` = filename with extension stripped (e.g., `1984-1985.m4v` → `1984-1985`).
 
@@ -68,11 +68,11 @@ const transcriptUrl = `/transcripts/${baseFilename}.vtt`;
 ```typescript
 export const SourceSchema = z.object({
   // ...
-  thumbnailUrl: z.string(),          // line 15 — REMOVE
+  thumbnailUrl: z.string(), // line 15 — REMOVE
   video: z.object({
     // ...
-    filename: z.string(),             // line 22 — KEEP (this is the source data)
-    videoUrl: z.string(),             // line 23 — REMOVE
+    filename: z.string(), // line 22 — KEEP (this is the source data)
+    videoUrl: z.string(), // line 23 — REMOVE
   }),
   // ...
 });
@@ -80,11 +80,11 @@ export const SourceSchema = z.object({
 
 ### Components consuming these fields
 
-| Component | Field used | Line |
-|-----------|-----------|------|
-| `VideoCard.tsx` | `source.thumbnailUrl` | 30 |
-| `SourceCard.tsx` | `source.thumbnailUrl` | 36 |
-| `VideoModal.tsx` | `video.videoUrl` | 62 |
+| Component        | Field used                                  | Line  |
+| ---------------- | ------------------------------------------- | ----- |
+| `VideoCard.tsx`  | `source.thumbnailUrl`                       | 30    |
+| `SourceCard.tsx` | `source.thumbnailUrl`                       | 36    |
+| `VideoModal.tsx` | `video.videoUrl`                            | 62    |
 | `VideoModal.tsx` | inline transcript URL from `video.filename` | 28-29 |
 
 ---
@@ -207,74 +207,74 @@ Also update the JSDoc comment on line 8 — change "scene" to "chunk" while you'
 Change this block:
 
 ```typescript
-      // Format timestamp
-      const minutes = Math.floor(r.startTime / 60);
-      const seconds = Math.floor(r.startTime % 60);
-      const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+// Format timestamp
+const minutes = Math.floor(r.startTime / 60);
+const seconds = Math.floor(r.startTime % 60);
+const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-      const thumbnailUrl = this.buildThumbnailUrl(r.videoFilename, r.startTime);
+const thumbnailUrl = this.buildThumbnailUrl(r.videoFilename, r.startTime);
 
-      // Build video URL with timestamp for streaming
-      const videoUrl = `/videos/${r.videoFilename}#t=${Math.floor(r.startTime)}`;
+// Build video URL with timestamp for streaming
+const videoUrl = `/videos/${r.videoFilename}#t=${Math.floor(r.startTime)}`;
 
-      sources.push({
-        chunkId: r.id,
-        citationId: index + 1, // Assign [1], [2], [3], etc.
-        chunkTitle: r.title,
-        summary: r.summary ?? 'No summary available.',
-        thumbnailUrl,
-        video: {
-          id: r.videoId,
-          title: r.videoTitle,
-          year: r.videoYear,
-          yearStart: r.videoYearStart,
-          yearEnd: r.videoYearEnd,
-          filename: r.videoFilename,
-          videoUrl,
-        },
-        timestamp: {
-          startSeconds: r.startTime,
-          endSeconds: r.endTime,
-          formatted,
-        },
-        participants,
-        locations,
-        activities,
-        globalSummary: videoRow?.globalSummary || null,
-      });
+sources.push({
+  chunkId: r.id,
+  citationId: index + 1, // Assign [1], [2], [3], etc.
+  chunkTitle: r.title,
+  summary: r.summary ?? 'No summary available.',
+  thumbnailUrl,
+  video: {
+    id: r.videoId,
+    title: r.videoTitle,
+    year: r.videoYear,
+    yearStart: r.videoYearStart,
+    yearEnd: r.videoYearEnd,
+    filename: r.videoFilename,
+    videoUrl,
+  },
+  timestamp: {
+    startSeconds: r.startTime,
+    endSeconds: r.endTime,
+    formatted,
+  },
+  participants,
+  locations,
+  activities,
+  globalSummary: videoRow?.globalSummary || null,
+});
 ```
 
 To:
 
 ```typescript
-      // Format timestamp
-      const minutes = Math.floor(r.startTime / 60);
-      const seconds = Math.floor(r.startTime % 60);
-      const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+// Format timestamp
+const minutes = Math.floor(r.startTime / 60);
+const seconds = Math.floor(r.startTime % 60);
+const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-      sources.push({
-        chunkId: r.id,
-        citationId: index + 1, // Assign [1], [2], [3], etc.
-        chunkTitle: r.title,
-        summary: r.summary ?? 'No summary available.',
-        video: {
-          id: r.videoId,
-          title: r.videoTitle,
-          year: r.videoYear,
-          yearStart: r.videoYearStart,
-          yearEnd: r.videoYearEnd,
-          filename: r.videoFilename,
-        },
-        timestamp: {
-          startSeconds: r.startTime,
-          endSeconds: r.endTime,
-          formatted,
-        },
-        participants,
-        locations,
-        activities,
-        globalSummary: videoRow?.globalSummary || null,
-      });
+sources.push({
+  chunkId: r.id,
+  citationId: index + 1, // Assign [1], [2], [3], etc.
+  chunkTitle: r.title,
+  summary: r.summary ?? 'No summary available.',
+  video: {
+    id: r.videoId,
+    title: r.videoTitle,
+    year: r.videoYear,
+    yearStart: r.videoYearStart,
+    yearEnd: r.videoYearEnd,
+    filename: r.videoFilename,
+  },
+  timestamp: {
+    startSeconds: r.startTime,
+    endSeconds: r.endTime,
+    formatted,
+  },
+  participants,
+  locations,
+  activities,
+  globalSummary: videoRow?.globalSummary || null,
+});
 ```
 
 #### 3b. Delete the `buildThumbnailUrl` method entirely (lines 318-322):
@@ -352,14 +352,14 @@ Note: since the imported function is also named `transcriptUrl`, the local varia
 
 ## Files Modified (Summary)
 
-| # | File | Action |
-|---|------|--------|
-| 1 | `packages/ui/src/utils/mediaUrls.ts` | **CREATE** — new utility with `thumbnailUrl()`, `videoUrl()`, `transcriptUrl()` |
-| 2 | `packages/search/src/schemas.ts` | **EDIT** — remove `thumbnailUrl` and `videoUrl` from `SourceSchema` |
-| 3 | `packages/search/src/archivist.ts` | **EDIT** — remove URL construction in `buildSources()`, delete `buildThumbnailUrl()` method |
-| 4 | `packages/ui/src/components/VideoCard.tsx` | **EDIT** — import utility, replace `source.thumbnailUrl` |
-| 5 | `packages/ui/src/components/SourceCard.tsx` | **EDIT** — import utility, replace `source.thumbnailUrl` |
-| 6 | `packages/ui/src/components/VideoModal.tsx` | **EDIT** — import utility, replace inline transcript/video URL construction |
+| #   | File                                        | Action                                                                                      |
+| --- | ------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 1   | `packages/ui/src/utils/mediaUrls.ts`        | **CREATE** — new utility with `thumbnailUrl()`, `videoUrl()`, `transcriptUrl()`             |
+| 2   | `packages/search/src/schemas.ts`            | **EDIT** — remove `thumbnailUrl` and `videoUrl` from `SourceSchema`                         |
+| 3   | `packages/search/src/archivist.ts`          | **EDIT** — remove URL construction in `buildSources()`, delete `buildThumbnailUrl()` method |
+| 4   | `packages/ui/src/components/VideoCard.tsx`  | **EDIT** — import utility, replace `source.thumbnailUrl`                                    |
+| 5   | `packages/ui/src/components/SourceCard.tsx` | **EDIT** — import utility, replace `source.thumbnailUrl`                                    |
+| 6   | `packages/ui/src/components/VideoModal.tsx` | **EDIT** — import utility, replace inline transcript/video URL construction                 |
 
 ---
 
