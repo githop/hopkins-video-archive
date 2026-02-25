@@ -10,7 +10,8 @@ import {
   type EmbeddingModel,
   type RerankingModel,
 } from 'ai';
-import type { HybridResult, Db, ArchivistConfig } from './types.ts';
+import type { HybridResult, ArchivistConfig } from './types.ts';
+import type { Db } from './db-types.ts';
 import { type Source, type StreamChunk } from './schemas.ts';
 import { EntityIndex } from './entity-index.ts';
 import { FilenameIndex, type FilenameMatch } from './filename-index.ts';

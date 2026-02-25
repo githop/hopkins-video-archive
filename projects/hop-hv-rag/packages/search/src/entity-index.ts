@@ -1,5 +1,5 @@
 import { entities, entityVariants } from '@hop-hv-rag/db';
-import type { Db } from './types.ts';
+import type { Db } from './db-types.ts';
 
 export interface EntityMatch {
   id: number;
