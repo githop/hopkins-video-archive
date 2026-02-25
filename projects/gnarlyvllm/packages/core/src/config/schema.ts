@@ -31,6 +31,8 @@ export const ModelDefaultsSchema = z.object({
   max_num_seqs: z.number().int().positive().optional(),
   max_num_batched_tokens: z.number().int().positive().optional(),
   num_scheduler_steps: z.number().int().positive().optional(),
+  tokenizer: z.string().optional(),
+  hf_config_path: z.string().optional(),
 });
 export type ModelDefaults = z.infer<typeof ModelDefaultsSchema>;
 
@@ -87,4 +89,6 @@ export type ResolvedModelConfig = ModelConfig & {
   max_num_seqs?: number;
   max_num_batched_tokens?: number;
   num_scheduler_steps?: number;
+  tokenizer?: string;
+  hf_config_path?: string;
 };

@@ -16,7 +16,8 @@ options:
                         Log aggregate rather than per-engine statistics when
                         using data parallelism. (default: False)
   --api-server-count API_SERVER_COUNT, -asc API_SERVER_COUNT
-                        How many API server processes to run. (default: 1)
+                        How many API server processes to run. Defaults to
+                        data_parallel_size if not specified. (default: None)
   --config CONFIG       Read CLI options from a config file. Must be a YAML
                         with the following options: https://docs.vllm.ai/en/la
                         test/configuration/serve_args.html (default: None)
@@ -55,6 +56,16 @@ Frontend:
                         content as a list of dictionaries, similar to OpenAI
                         schema. Example: `[{"type": "text", "text": "Hello
                         world!"}]` (default: auto)
+  --default-chat-template-kwargs DEFAULT_CHAT_TEMPLATE_KWARGS
+                        Default keyword arguments to pass to the chat template
+                        renderer. These will be merged with request-level
+                        chat_template_kwargs, with request values taking
+                        precedence. Useful for setting default behavior for
+                        reasoning models. Example: '{"enable_thinking":
+                        false}' to disable thinking mode by default for
+                        Qwen3/DeepSeek models.
+                        Should either be a valid JSON string or JSON keys
+                        passed individually. (default: None)
   --disable-fastapi-docs, --no-disable-fastapi-docs
                         Disable FastAPI's OpenAPI schema, Swagger UI, and
                         ReDoc endpoint. (default: False)
@@ -71,9 +82,17 @@ Frontend:
   --enable-force-include-usage, --no-enable-force-include-usage
                         If set to True, including usage on every request.
                         (default: False)
+  --enable-log-deltas, --no-enable-log-deltas
+                        If set to False, output deltas will not be logged.
+                        Relevant only if  --enable-log-outputs is set.
+                        (default: True)
   --enable-log-outputs, --no-enable-log-outputs
-                        If True, log model outputs (generations). Requires
-                        --enable-log-requests. (default: False)
+                        If set to True, log model outputs (generations).
+                        Requires --enable-log-requests. (default: False)
+  --enable-offline-docs, --no-enable-offline-docs
+                        Enable offline FastAPI documentation for air-gapped
+                        environments. Uses vendored static assets bundled with
+                        vLLM. (default: False)
   --enable-prompt-tokens-details, --no-enable-prompt-tokens-details
                         If set to True, enable prompt_tokens_details in usage.
                         (default: False)
@@ -146,13 +165,17 @@ Frontend:
                         module's). (default: 0)
   --ssl-certfile SSL_CERTFILE
                         The file path to the SSL cert file. (default: None)
+  --ssl-ciphers SSL_CIPHERS
+                        SSL cipher suites for HTTPS (TLS 1.2 and below only).
+                        Example: 'ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-
+                        CHACHA20-POLY1305' (default: None)
   --ssl-keyfile SSL_KEYFILE
                         The file path to the SSL key file. (default: None)
   --tokens-only, --no-tokens-only
                         If set to True, only enable the Tokens In<>Out
                         endpoint.  This is intended for use in a Disaggregated
                         Everything setup. (default: False)
-  --tool-call-parser {deepseek_v3,deepseek_v31,deepseek_v32,ernie45,gigachat3,glm45,granite,granite-20b-fc,hermes,hunyuan_a13b,internlm,jamba,kimi_k2,llama3_json,llama4_json,llama4_pythonic,longcat,minimax,minimax_m2,mistral,olmo3,openai,phi4_mini_json,pythonic,qwen3_coder,qwen3_xml,seed_oss,step3,xlam} or name registered in --tool-parser-plugin
+  --tool-call-parser {deepseek_v3,deepseek_v31,deepseek_v32,ernie45,functiongemma,gigachat3,glm45,glm47,granite,granite-20b-fc,hermes,hunyuan_a13b,internlm,jamba,kimi_k2,llama3_json,llama4_json,llama4_pythonic,longcat,minimax,minimax_m2,mistral,olmo3,openai,phi4_mini_json,pythonic,qwen3_coder,qwen3_xml,seed_oss,step3,xlam} or name registered in --tool-parser-plugin
                         Select the tool call parser depending on the model
                         that you're using. This is used to parse the model-
                         generated tool call into OpenAI API format. Required
@@ -182,6 +205,9 @@ Frontend:
 ModelConfig:
   Configuration for the model.
 
+  --allow-deprecated-quantization, --no-allow-deprecated-quantization
+                        Whether to allow deprecated quantization methods.
+                        (default: False)
   --allowed-local-media-path ALLOWED_LOCAL_MEDIA_PATH
                         Allowing API requests to read local images or videos
                         from directories specified by the server file system.
@@ -202,7 +228,7 @@ ModelConfig:
                         - "hf" will load the config in hf format.
                         - "mistral" will load the config in mistral format.
                         (default: auto)
-  --convert {auto,classify,embed,none,reward}
+  --convert {auto,classify,embed,mm_encoder_only,none,reward}
                         Convert the model using adapters defined in
                         [vllm.model_executor.models.adapters][]. The most
                         common use case is to adapt a text generation model to
@@ -237,6 +263,8 @@ ModelConfig:
                         WARNING: The vLLM engine may crash if incorrect shape
                         of embeddings is passed. Only enable this flag for
                         trusted users! (default: False)
+  --enable-return-routed-experts, --no-enable-return-routed-experts
+                        Whether to return routed experts. (default: False)
   --enable-sleep-mode, --no-enable-sleep-mode
                         Enable sleep mode for the engine (only cuda and hip
                         platforms are supported). (default: False)
@@ -305,10 +333,18 @@ ModelConfig:
                         - 1k -> 1000
                         - 1K -> 1024
                         - 25.6k -> 25,600
+                        - -1 or 'auto' -> Automatically choose the maximum
+                        model length that fits in GPU memory. This will use
+                        the model's maximum context length if it fits,
+                        otherwise it will find the largest length that can be
+                        accommodated.
                         Parse human-readable integers like '1k', '2M', etc.
                         Including decimal values with decimal multipliers.
+                        Also accepts -1 or 'auto' as a special value for auto-
+                        detection.
                         Examples: - '1k' -> 1,000 - '1K' -> 1,024 - '25.6k' ->
-                        25,600 (default: None)
+                        25,600 - '-1' or 'auto' -> -1 (special value for auto-
+                        detection) (default: None)
   --model MODEL         Name or path of the Hugging Face model to use. It is
                         also used as the content for `model_name` tag in
                         metrics output when `served_model_name` is not
@@ -498,17 +534,20 @@ StructuredOutputsConfig:
 ParallelConfig:
   Configuration for the distributed execution.
 
-  --all2all-backend {allgather_reducescatter,deepep_high_throughput,deepep_low_latency,flashinfer_all2allv,naive,pplx,None}
+  --all2all-backend {allgather_reducescatter,deepep_high_throughput,deepep_low_latency,flashinfer_all2allv,mori,naive,pplx}
                         All2All backend for MoE expert parallel communication.
-                        If not set, uses the value from VLLM_ALL2ALL_BACKEND
-                        environment variable. Available options: - "naive":
-                        Naive all2all implementation using broadcasts -
-                        "allgather_reducescatter": All2all based on allgather
-                        and reducescatter - "pplx": Use pplx kernels -
-                        "deepep_high_throughput": Use deepep high-throughput
-                        kernels - "deepep_low_latency": Use deepep low-latency
-                        kernels - "flashinfer_all2allv": Use flashinfer
-                        alltoallv kernels for mnnvl (default: None)
+                        Available options:
+                        - "naive": Naive all2all implementation using
+                        broadcasts
+                        - "allgather_reducescatter": All2all based on
+                        allgather and reducescatter
+                        - "pplx": Use pplx kernels
+                        - "deepep_high_throughput": Use deepep high-throughput
+                        kernels
+                        - "deepep_low_latency": Use deepep low-latency kernels
+                        - "mori": Use mori kernels
+                        - "flashinfer_all2allv": Use flashinfer alltoallv
+                        kernels for mnnvl (default: allgather_reducescatter)
   --cp-kv-cache-interleave-size CP_KV_CACHE_INTERLEAVE_SIZE
                         Interleave size of kv_cache storage while using DCP or
                         PCP. For `total_cp_rank = pcp_rank * dcp_world_size +
@@ -590,7 +629,9 @@ ParallelConfig:
   --disable-nccl-for-dp-synchronization, --no-disable-nccl-for-dp-synchronization
                         Forces the dp synchronization logic in
                         vllm/v1/worker/dp_utils.py  to use Gloo instead of
-                        NCCL for its all reduce (default: False)
+                        NCCL for its all reduce.
+                        Defaults to True when async scheduling is enabled,
+                        False otherwise. (default: None)
   --distributed-executor-backend ['external_launcher', 'mp', 'ray', 'uni']
                         Backend to use for distributed model workers, either
                         "ray" or "mp" (multiprocessing). If the product of
@@ -608,7 +649,7 @@ ParallelConfig:
   --enable-eplb, --no-enable-eplb
                         Enable expert parallelism load balancing for MoE
                         layers. (default: False)
-  --enable-expert-parallel, --no-enable-expert-parallel
+  --enable-expert-parallel, --no-enable-expert-parallel, -ep
                         Use expert parallelism instead of tensor parallelism
                         for MoE layers. (default: False)
   --eplb-config EPLB_CONFIG
@@ -617,7 +658,8 @@ ParallelConfig:
                         passed individually. (default:
                         EPLBConfig(window_size=1000, step_interval=3000,
                         num_redundant_experts=0, log_balancedness=False,
-                        use_async=False, policy='default'))
+                        log_balancedness_interval=1, use_async=False,
+                        policy='default'))
   --expert-placement-strategy {linear,round_robin}
                         The expert placement strategy for MoE layers:
                         - "linear": Experts are placed in a contiguous manner.
@@ -662,6 +704,8 @@ ParallelConfig:
                         (default: False)
   --tensor-parallel-size TENSOR_PARALLEL_SIZE, -tp TENSOR_PARALLEL_SIZE
                         Number of tensor parallel groups. (default: 1)
+  --ubatch-size UBATCH_SIZE
+                        Number of ubatch size. (default: 0)
   --worker-cls WORKER_CLS
                         The full name of the worker class to use. If "auto",
                         the worker class will be determined based on the
@@ -738,18 +782,19 @@ CacheConfig:
                         Including decimal values with decimal multipliers.
                         Examples: - '1k' -> 1,000 - '1K' -> 1,024 - '25.6k' ->
                         25,600 (default: None)
-  --kv-offloading-backend {lmcache,native,None}
+  --kv-offloading-backend {lmcache,native}
                         The backend to use for KV cache offloading. Supported
                         backends include 'native' (vLLM native CPU
-                        offloading), 'lmcache' This option must be used
-                        together with kv_offloading_size. (default: None)
+                        offloading), 'lmcache'. KV offloading is only
+                        activated when kv_offloading_size is set. (default:
+                        native)
   --kv-offloading-size KV_OFFLOADING_SIZE
                         Size of the KV cache offloading buffer in GiB. When TP
                         > 1, this is the total buffer size summed across all
                         TP ranks. By default, this is set to None, which means
-                        no KV offloading is enabled. When set with
-                        kv_offloading_backend, vLLM will enable KV cache
-                        offloading to CPU (default: None)
+                        no KV offloading is enabled. When set, vLLM will
+                        enable KV cache offloading to CPU using the
+                        kv_offloading_backend. (default: None)
   --kv-sharing-fast-prefill, --no-kv-sharing-fast-prefill
                         This feature is work in progress and no prefill
                         optimization takes place with this flag enabled
@@ -771,6 +816,15 @@ CacheConfig:
                         conv as well as the ssm state). If set to 'auto', the
                         data type will be inferred from the model config.
                         (default: auto)
+  --mamba-cache-mode {align,all,none}
+                        The cache strategy for Mamba layers. - "none": set
+                        when prefix caching is disabled. - "all": cache the
+                        mamba state of all tokens at position i * block_size.
+                        This is  the default behavior (for models that support
+                        it) when prefix caching is enabled. - "align": only
+                        cache the mamba state of the last token of each
+                        scheduler step and when the token is at position i *
+                        block_size. (default: none)
   --mamba-ssm-cache-dtype {auto,float16,float32}
                         The data type to use for the Mamba cache (ssm state
                         only, conv state will still be controlled by
@@ -848,9 +902,14 @@ MultiModalConfig:
   --mm-encoder-attn-backend MM_ENCODER_ATTN_BACKEND
                         Optional override for the multi-modal encoder
                         attention backend when using vision transformers.
-                        Accepts any value from `vllm.attention.backends.regist
-                        ry.AttentionBackendEnum` (e.g. `FLASH_ATTN`).
+                        Accepts any value from `vllm.v1.attention.backends.reg
+                        istry.AttentionBackendEnum` (e.g. `FLASH_ATTN`).
                         (default: None)
+  --mm-encoder-only, --no-mm-encoder-only
+                        When enabled, skips the language component of the
+                        model.
+                        This is usually only valid in disaggregated Encoder
+                        process. (default: False)
   --mm-encoder-tp-mode {data,weights}
                         Indicates how to optimize multi-modal encoder
                         inference using tensor parallelism (TP).
@@ -929,6 +988,12 @@ LoRAConfig:
   --enable-lora, --no-enable-lora
                         If True, enable handling of LoRA adapters. (default:
                         None)
+  --enable-tower-connector-lora, --no-enable-tower-connector-lora
+                        If `True`, LoRA support for the tower (vision encoder)
+                        and connector  of multimodal models will be enabled.
+                        This is an experimental feature and  currently only
+                        supports some MM models such as the Qwen VL series.
+                        The default  is False. (default: False)
   --fully-sharded-loras, --no-fully-sharded-loras
                         By default, only half of the LoRA computation is
                         sharded with tensor parallelism. Enabling this will
@@ -968,6 +1033,15 @@ ObservabilityConfig:
                         attach informations such as input/output shapes to
                         nvtx range markers. Noted that this doesn't work with
                         CUDA graphs enabled. (default: False)
+  --enable-logging-iteration-details, --no-enable-logging-iteration-details
+                        Enable detailed logging of iteration details. If set,
+                        vllm EngineCore will log iteration details This
+                        includes number of context/generation requests and
+                        tokens and the elapsed cpu time for the iteration.
+                        (default: False)
+  --enable-mfu-metrics, --no-enable-mfu-metrics
+                        Enable Model FLOPs Utilization (MFU) metrics.
+                        (default: False)
   --kv-cache-metrics, --no-kv-cache-metrics
                         Enable KV cache residency metrics (lifetime, idle
                         time, reuse gaps). Uses sampling to minimize overhead.
@@ -993,11 +1067,10 @@ SchedulerConfig:
   Scheduler configuration.
 
   --async-scheduling, --no-async-scheduling
-                        If set to True, perform async scheduling. This helps
-                        to avoid gaps in GPU utilization, leading to better
-                        latency and throughput. Async scheduling is currently
-                        not supported with some features such as speculative
-                        decoding and pipeline parallelism. (default: False)
+                        If set to False, disable async scheduling. Async
+                        scheduling helps to avoid gaps in GPU utilization,
+                        leading to better latency and throughput. (default:
+                        None)
   --disable-chunked-mm-input, --no-disable-chunked-mm-input
                         If set to true and chunked prefill is enabled, we do
                         not want to partially schedule a multimodal item. Only
@@ -1157,7 +1230,7 @@ VllmConfig:
                         use_prefill_decode_attention=False,
                         flash_attn_max_num_splits_for_cuda_graph=32,
                         use_cudnn_prefill=False,
-                        use_trtllm_ragged_deepseek_prefill=False,
+                        use_trtllm_ragged_deepseek_prefill=True,
                         use_trtllm_attention=None,
                         disable_flashinfer_prefill=False,
                         disable_flashinfer_q_quantization=False))
@@ -1188,7 +1261,8 @@ VllmConfig:
                         {}, 'max_cudagraph_capture_size': None,
                         'dynamic_shapes_config': {'type':
                         <DynamicShapesType.BACKED: 'backed'>,
-                        'evaluate_guards': False}, 'local_cache_dir': None})
+                        'evaluate_guards': False, 'assume_32_bit_indexing':
+                        True}, 'local_cache_dir': None})
   --ec-transfer-config EC_TRANSFER_CONFIG
                         The configurations for distributed EC cache transfer.
                         Should either be a valid JSON string or JSON keys

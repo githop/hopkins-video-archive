@@ -71,9 +71,14 @@ export function resolveModelConfig(
   let enable_tool_calling = model.defaults?.enable_tool_calling;
   let tool_call_parser = model.defaults?.tool_call_parser;
   let reasoning_parser = model.defaults?.reasoning_parser;
+  let enable_expert_parallel = model.defaults?.enable_expert_parallel;
+  let swap_space = model.defaults?.swap_space;
+  let max_seq_len_to_capture = model.defaults?.max_seq_len_to_capture;
   let max_num_seqs = model.defaults?.max_num_seqs;
   let max_num_batched_tokens = model.defaults?.max_num_batched_tokens;
   let num_scheduler_steps = model.defaults?.num_scheduler_steps;
+  let tokenizer = model.defaults?.tokenizer;
+  let hf_config_path = model.defaults?.hf_config_path;
 
   // Apply stack overrides if specified
   if (stackName) {
@@ -103,12 +108,20 @@ export function resolveModelConfig(
         tool_call_parser = overrides.tool_call_parser;
       if (overrides.reasoning_parser !== undefined)
         reasoning_parser = overrides.reasoning_parser;
+      if (overrides.enable_expert_parallel !== undefined)
+        enable_expert_parallel = overrides.enable_expert_parallel;
+      if (overrides.swap_space !== undefined) swap_space = overrides.swap_space;
+      if (overrides.max_seq_len_to_capture !== undefined)
+        max_seq_len_to_capture = overrides.max_seq_len_to_capture;
       if (overrides.max_num_seqs !== undefined)
         max_num_seqs = overrides.max_num_seqs;
       if (overrides.max_num_batched_tokens !== undefined)
         max_num_batched_tokens = overrides.max_num_batched_tokens;
       if (overrides.num_scheduler_steps !== undefined)
         num_scheduler_steps = overrides.num_scheduler_steps;
+      if (overrides.tokenizer !== undefined) tokenizer = overrides.tokenizer;
+      if (overrides.hf_config_path !== undefined)
+        hf_config_path = overrides.hf_config_path;
     }
   }
 
@@ -122,9 +135,14 @@ export function resolveModelConfig(
     enable_tool_calling,
     tool_call_parser,
     reasoning_parser,
+    enable_expert_parallel,
+    swap_space,
+    max_seq_len_to_capture,
     max_num_seqs,
     max_num_batched_tokens,
     num_scheduler_steps,
+    tokenizer,
+    hf_config_path,
   };
 }
 

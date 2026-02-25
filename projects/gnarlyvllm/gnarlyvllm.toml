@@ -163,3 +163,18 @@ enforce_eager = true
 gpu_memory_utilization = 0.15
 max_model_len = 4096
 enforce_eager = true
+
+[models.summarizer-bulk-27b]
+repo = "unsloth/Qwen3.5-27B-GGUF:Q4_K_M"
+task = "generate"
+port = 8011
+image = "docker.io/vllm/vllm-openai:nightly"
+
+[models.summarizer-bulk-27b.defaults]
+gpu_memory_utilization = 0.9
+max_model_len = 16384
+max_num_seqs = 8
+reasoning_parser = "qwen3"
+tokenizer = "Qwen/Qwen3.5-27B"
+hf_config_path = "Qwen/Qwen3.5-27B"
+quantization = "gguf"
