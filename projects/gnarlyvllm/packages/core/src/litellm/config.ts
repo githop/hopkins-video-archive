@@ -108,10 +108,22 @@ export function liteLLMConfigToYaml(config: LiteLLMConfig): string {
  */
 export async function checkLiteLLMHealth(port: number): Promise<boolean> {
   try {
-    const response = await fetch(`http://localhost:${port}/health`, {
-      signal: AbortSignal.timeout(5000),
+    // Use Bun.spawn with curl instead of fetch to avoid socket issues
+    const proc = Bun.spawn({
+      cmd: [
+        'curl',
+        '-s',
+        '-o',
+        '/dev/null',
+        '-w',
+        '%{http_code}',
+        `http://localhost:${port}/health`,
+      ],
+      timeout: 65000,
     });
-    return response.ok;
+    const exitCode = await proc.exited;
+    const output = await new Response(proc.stdout).text();
+    return exitCode === 0 && output.trim() === '200';
   } catch {
     return false;
   }
@@ -127,17 +139,20 @@ export async function waitForLiteLLMReady(
   containerName?: string,
 ): Promise<boolean> {
   const start = Date.now();
+  let attempt = 0;
   while (Date.now() - start < timeoutMs) {
+    attempt++;
     if (await checkLiteLLMHealth(port)) {
       return true;
     }
 
     if (containerName) {
       const container = await getContainer(containerName);
+      // Only abort if container exists but is in a failed state
+      // If container is not found yet, keep waiting (it may still be starting)
       if (
-        !container ||
-        container.state === 'exited' ||
-        container.state === 'stopped'
+        container &&
+        (container.state === 'exited' || container.state === 'stopped')
       ) {
         return false;
       }

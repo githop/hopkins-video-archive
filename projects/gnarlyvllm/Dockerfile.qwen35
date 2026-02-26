@@ -1,0 +1,21 @@
+# Dockerfile for Qwen3.5 model support
+# Extends vllm-openai:nightly with latest transformers from git
+# Required for qwen3_5 architecture support
+
+FROM docker.io/vllm/vllm-openai:nightly
+
+# Install git (required for pip to clone from git repos)
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
+# Install latest transformers from git for Qwen3.5 support
+# The model card specifies: transformers>=5.3.0.dev0
+# Pinning to a specific commit for reproducibility
+RUN pip install --no-cache-dir \
+    "transformers @ git+https://github.com/huggingface/transformers.git@f2ba019"
+
+# Copy and run the patch script
+COPY patch_transformers.py /tmp/patch_transformers.py
+RUN python3 /tmp/patch_transformers.py
+
+LABEL maintainer="gnarlyvllm"
+LABEL description="vLLM container with transformers for Qwen3.5 support"

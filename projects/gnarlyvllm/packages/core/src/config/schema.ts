@@ -33,6 +33,9 @@ export const ModelDefaultsSchema = z.object({
   num_scheduler_steps: z.number().int().positive().optional(),
   tokenizer: z.string().optional(),
   hf_config_path: z.string().optional(),
+  tensor_parallel_size: z.number().int().positive().optional(),
+  speculative_config: z.string().optional(),
+  language_model_only: z.boolean().optional(),
 });
 export type ModelDefaults = z.infer<typeof ModelDefaultsSchema>;
 
@@ -91,4 +94,7 @@ export type ResolvedModelConfig = ModelConfig & {
   num_scheduler_steps?: number;
   tokenizer?: string;
   hf_config_path?: string;
+  tensor_parallel_size?: number;
+  speculative_config?: string;
+  language_model_only?: boolean;
 };

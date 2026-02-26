@@ -79,6 +79,9 @@ export function resolveModelConfig(
   let num_scheduler_steps = model.defaults?.num_scheduler_steps;
   let tokenizer = model.defaults?.tokenizer;
   let hf_config_path = model.defaults?.hf_config_path;
+  let tensor_parallel_size = model.defaults?.tensor_parallel_size;
+  let speculative_config = model.defaults?.speculative_config;
+  let language_model_only = model.defaults?.language_model_only;
 
   // Apply stack overrides if specified
   if (stackName) {
@@ -122,6 +125,12 @@ export function resolveModelConfig(
       if (overrides.tokenizer !== undefined) tokenizer = overrides.tokenizer;
       if (overrides.hf_config_path !== undefined)
         hf_config_path = overrides.hf_config_path;
+      if (overrides.tensor_parallel_size !== undefined)
+        tensor_parallel_size = overrides.tensor_parallel_size;
+      if (overrides.speculative_config !== undefined)
+        speculative_config = overrides.speculative_config;
+      if (overrides.language_model_only !== undefined)
+        language_model_only = overrides.language_model_only;
     }
   }
 
@@ -143,6 +152,9 @@ export function resolveModelConfig(
     num_scheduler_steps,
     tokenizer,
     hf_config_path,
+    tensor_parallel_size,
+    speculative_config,
+    language_model_only,
   };
 }
 

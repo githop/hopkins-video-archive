@@ -148,6 +148,24 @@ export function buildVllmContainerOptions(
     command.push('--num-scheduler-steps', model.num_scheduler_steps.toString());
   }
 
+  // Tensor parallelism (required for AWQ and large models)
+  if (model.tensor_parallel_size !== undefined) {
+    command.push(
+      '--tensor-parallel-size',
+      model.tensor_parallel_size.toString(),
+    );
+  }
+
+  // Speculative decoding / Multi-token prediction
+  if (model.speculative_config !== undefined) {
+    command.push('--speculative-config', model.speculative_config);
+  }
+
+  // Language model only (skip vision encoder for multimodal models)
+  if (model.language_model_only) {
+    command.push('--language-model-only');
+  }
+
   // Expand HF cache path
   const hfCache = settings.huggingface_cache.replace(/^~/, Bun.env.HOME || '');
 

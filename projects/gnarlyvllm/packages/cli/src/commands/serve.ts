@@ -146,6 +146,7 @@ export async function serveCommand(
 
     // Start LiteLLM proxy
     console.log('Starting LiteLLM proxy...');
+    const litellmStartTime = Date.now();
 
     // Remove existing litellm container if any
     const existingLitellm = await getContainer('litellm');
@@ -167,12 +168,17 @@ export async function serveCommand(
 
     const litellmReady = await waitForLiteLLMReady(
       config.settings.litellm_port,
-      60000,
+      300000, // 5 minutes - 27B model needs extra time for backend verification
       1000,
       'litellm',
     );
+    const litellmElapsed = Date.now() - litellmStartTime;
+    console.log(`LiteLLM startup took ${litellmElapsed}ms`);
+
     if (!litellmReady) {
-      console.error('LiteLLM failed to start within timeout.');
+      console.error(
+        `LiteLLM failed to start within timeout (${litellmElapsed}ms elapsed).`,
+      );
       return 1;
     }
 
