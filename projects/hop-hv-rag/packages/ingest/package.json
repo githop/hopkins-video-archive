@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "backup": "bun src/backup.ts",
-    "clean": "bun src/clean.ts",
+    "reset": "bun src/full-reset.ts",
     "reset:entities": "bun src/reset-entities.ts",
     "seed": "bun src/seed-metadata.ts",
     "summarize": "bun src/summarize-chunks.ts",

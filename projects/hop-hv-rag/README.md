@@ -97,8 +97,8 @@ The server starts on port 3200 by default.
 | `bun run ingest:rebuild-fts-chunks`   | Rebuild full-text search index                 |
 | `bun run ingest:temporal`             | Extract temporal metadata (year ranges)        |
 | `bun run ingest:global`               | Generate global video summaries                |
-| `bun run ingest:reset`                | Reset entire database (destructive)            |
-| `bun run ingest:reset-entities`       | Reset only entity data                         |
+| `bun run db:reset`                    | Reset entire database (destructive)            |
+| `bun run db:reset:entities`           | Reset only entity data                         |
 
 ### Search & RAG
 

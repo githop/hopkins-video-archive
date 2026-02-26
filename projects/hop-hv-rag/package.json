@@ -5,9 +5,9 @@
     "packages/*"
   ],
   "scripts": {
-    "ingest:backup": "bun --filter @hop-hv-rag/ingest backup",
-    "ingest:reset": "rm -f data/hv-rag.db && bun run ingest:init-db && bun run ingest:init-vec && bun run ingest:seed",
-    "ingest:reset-entities": "bun --filter @hop-hv-rag/ingest reset:entities",
+    "db:backup": "bun --filter @hop-hv-rag/ingest backup",
+    "db:reset": "bun --filter @hop-hv-rag/ingest reset",
+    "db:reset:entities": "bun --filter @hop-hv-rag/ingest reset:entities",
     "ingest:seed": "bun --filter @hop-hv-rag/ingest seed",
     "ingest:chunk": "bun --filter @hop-hv-rag/ingest ingest:chunk",
     "ingest:summarize-chunks": "bun --cwd packages/ingest ingest:summarize-chunks",
