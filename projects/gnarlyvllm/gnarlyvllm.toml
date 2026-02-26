@@ -172,7 +172,6 @@ image = "localhost/gnarlyvllm/qwen35:latest"
 
 [models.summarizer-bulk-27b.defaults]
 gpu_memory_utilization = 0.95
-max_model_len = 8192
-reasoning_parser = "qwen3"
+max_model_len = 4096
+max_num_seqs = 4
 language_model_only = true
-enforce_eager = true
