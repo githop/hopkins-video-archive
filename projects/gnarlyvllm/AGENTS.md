@@ -106,11 +106,15 @@ bun run packages/cli/src/main.tsx <command>
 2. Export an async function that takes `(args: string[], configPath?: string): Promise<number>`
 3. Register in `packages/cli/src/main.tsx` switch statement
 
-### Add a new config option
+### Add a new vLLM flag or config option
 
-1. Update Zod schema in `packages/core/src/config/schema.ts`
-2. Update `gnarlyvllm.example.toml`
-3. Types auto-propagate via Zod inference
+Adding a new setting that gets passed down to the vLLM container requires updating a few places to ensure it flows from the user's TOML file down to the Podman execution.
+
+1. **Schema Definition**: Update `ModelDefaultsSchema` and the `ResolvedModelConfig` type in `packages/core/src/config/schema.ts`.
+2. **Config Resolution**: Update the `resolveModelConfig` function in `packages/core/src/config/loader.ts` to explicitly map the new field from `model.defaults`, apply stack overrides if they exist, and return it in the resolved object.
+3. **Container Arguments**: Update the `buildVllmContainerOptions` function in `packages/core/src/vllm/container.ts` to map the property from the resolved config into a command-line argument for the container.
+4. **Documentation**: Add an example of the new flag to `gnarlyvllm.example.toml`.
+5. Types auto-propagate via Zod inference once the schema is updated.
 
 ### Working with Podman
 

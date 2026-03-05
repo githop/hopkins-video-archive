@@ -166,6 +166,19 @@ export function buildVllmContainerOptions(
     command.push('--language-model-only');
   }
 
+  // Default chat template kwargs (for disabling thinking mode, etc.)
+  if (model.default_chat_template_kwargs) {
+    command.push(
+      '--default-chat-template-kwargs',
+      model.default_chat_template_kwargs,
+    );
+  }
+
+  // Prefix caching
+  if (model.enable_prefix_caching) {
+    command.push('--enable-prefix-caching');
+  }
+
   // Expand HF cache path
   const hfCache = settings.huggingface_cache.replace(/^~/, Bun.env.HOME || '');
 

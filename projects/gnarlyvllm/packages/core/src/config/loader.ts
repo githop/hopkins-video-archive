@@ -82,6 +82,9 @@ export function resolveModelConfig(
   let tensor_parallel_size = model.defaults?.tensor_parallel_size;
   let speculative_config = model.defaults?.speculative_config;
   let language_model_only = model.defaults?.language_model_only;
+  let default_chat_template_kwargs =
+    model.defaults?.default_chat_template_kwargs;
+  let enable_prefix_caching = model.defaults?.enable_prefix_caching;
 
   // Apply stack overrides if specified
   if (stackName) {
@@ -131,6 +134,10 @@ export function resolveModelConfig(
         speculative_config = overrides.speculative_config;
       if (overrides.language_model_only !== undefined)
         language_model_only = overrides.language_model_only;
+      if (overrides.default_chat_template_kwargs !== undefined)
+        default_chat_template_kwargs = overrides.default_chat_template_kwargs;
+      if (overrides.enable_prefix_caching !== undefined)
+        enable_prefix_caching = overrides.enable_prefix_caching;
     }
   }
 
@@ -155,6 +162,8 @@ export function resolveModelConfig(
     tensor_parallel_size,
     speculative_config,
     language_model_only,
+    default_chat_template_kwargs,
+    enable_prefix_caching,
   };
 }
 

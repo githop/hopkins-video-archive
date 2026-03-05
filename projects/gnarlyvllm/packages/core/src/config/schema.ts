@@ -36,6 +36,8 @@ export const ModelDefaultsSchema = z.object({
   tensor_parallel_size: z.number().int().positive().optional(),
   speculative_config: z.string().optional(),
   language_model_only: z.boolean().optional(),
+  default_chat_template_kwargs: z.string().optional(),
+  enable_prefix_caching: z.boolean().optional(),
 });
 export type ModelDefaults = z.infer<typeof ModelDefaultsSchema>;
 
@@ -97,4 +99,6 @@ export type ResolvedModelConfig = ModelConfig & {
   tensor_parallel_size?: number;
   speculative_config?: string;
   language_model_only?: boolean;
+  default_chat_template_kwargs?: string;
+  enable_prefix_caching?: boolean;
 };

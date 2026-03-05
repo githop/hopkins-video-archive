@@ -172,6 +172,9 @@ image = "localhost/gnarlyvllm/qwen35:latest"
 
 [models.summarizer-bulk-27b.defaults]
 gpu_memory_utilization = 0.95
-max_model_len = 4096
+max_model_len = 6400
 max_num_seqs = 4
+reasoning_parser = "qwen3"
 language_model_only = true
+enable_prefix_caching = true
+default_chat_template_kwargs = '{"enable_thinking": false}'
