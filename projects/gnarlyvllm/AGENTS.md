@@ -3,7 +3,7 @@
 ## Project Overview
 
 gnarlyvllm is a CLI tool for managing vLLM containers via Podman, providing an
-OpenAI-compatible API endpoint through LiteLLM. It replaces Ollama for local LLM
+OpenAI-compatible API endpoint through a custom Bun-based proxy (Gnarly Proxy). It replaces Ollama for local LLM
 serving with support for embeddings, reranking, and chat models.
 
 ## Tech Stack
@@ -33,8 +33,8 @@ gnarlyvllm/
 │   │       ├── vllm/             # vLLM container configuration
 │   │       │   ├── container.ts  # Container options builder
 │   │       │   └── index.ts
-│   │       ├── litellm/          # LiteLLM proxy management
-│   │       │   ├── config.ts     # YAML config generation
+│   │       ├── proxy/            # Gnarly Proxy management
+│   │       │   ├── server.ts     # Hono-based proxy server script
 │   │       │   ├── container.ts  # Container options builder
 │   │       │   └── index.ts
 │   │       └── index.ts          # Re-exports all modules
@@ -141,8 +141,8 @@ podman run --rm --device nvidia.com/gpu=all docker.io/vllm/vllm-openai:latest se
 ## CLI Commands
 
 ```bash
-gnarlyvllm serve <model>           # Start single model + LiteLLM
-gnarlyvllm start <stack>           # Start stack + LiteLLM
+gnarlyvllm serve <model>           # Start single model + Gnarly Proxy
+gnarlyvllm start <stack>           # Start stack + Gnarly Proxy
 gnarlyvllm stop [model|stack]      # Stop specific or all
 gnarlyvllm status                  # Show running state
 gnarlyvllm logs <model>            # Tail logs
@@ -157,7 +157,7 @@ gnarlyvllm config init             # Generate example config
 │                    gnarlyvllm CLI                               │
 │                 (Bun + TypeScript)                              │
 ├─────────────────────────────────────────────────────────────────┤
-│                 LiteLLM Proxy @ :4000                           │
+│                 Gnarly Proxy @ :4000                            │
 │           Unified OpenAI-compatible endpoint                    │
 ├─────────────┬─────────────┬─────────────────────────────────────┤
 │  vLLM Chat  │ vLLM Embed  │  vLLM Rerank                        │

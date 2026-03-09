@@ -14,7 +14,7 @@ import {
   stopAllVllmContainers,
   startModel,
   startStack,
-  ensureLiteLLM,
+  ensureProxy,
 } from './operations.ts';
 import { resolveModelConfig, resolveStackModels } from '../config/index.ts';
 
@@ -46,7 +46,7 @@ export const orchestratorMachine = setup({
     setError: assign({
       error: ({ event }: { event: OrchestratorEvent }) => {
         if (event.type === 'CONTAINER_FAILED') return event.error;
-        if (event.type === 'LITELLM_FAILED') return event.error;
+        if (event.type === 'PROXY_FAILED') return event.error;
         return 'Unknown error';
       },
     }),
@@ -97,7 +97,7 @@ export const orchestratorMachine = setup({
       },
     ),
 
-    configureLiteLLM: fromPromise(
+    configureProxy: fromPromise(
       async ({
         input,
       }: {
@@ -111,7 +111,7 @@ export const orchestratorMachine = setup({
             ? [resolveModelConfig(config, entity.name)]
             : resolveStackModels(config, entity.name);
 
-        await ensureLiteLLM(models, config.settings);
+        await ensureProxy(models, config.settings);
       },
     ),
   },
@@ -121,7 +121,7 @@ export const orchestratorMachine = setup({
   context: ({ input }: { input: OrchestratorInput }) => ({
     config: input.config,
     activeEntity: null,
-    litellmRunning: false,
+    proxyRunning: false,
     containerStatuses: [],
     error: null,
   }),
@@ -143,7 +143,7 @@ export const orchestratorMachine = setup({
               event.type === 'HYDRATE' ? event.activeEntity : null,
             containerStatuses: ({ event }) =>
               event.type === 'HYDRATE' ? event.containerStatuses : [],
-            litellmRunning: true,
+            proxyRunning: true,
           }),
         },
       },
@@ -171,7 +171,7 @@ export const orchestratorMachine = setup({
               entity: context.activeEntity!,
             }),
             onDone: {
-              target: 'configuringLiteLLM',
+              target: 'configuringProxy',
               actions: assign({
                 containerStatuses: ({ event }: { event: any }) => event.output,
               }),
@@ -184,9 +184,9 @@ export const orchestratorMachine = setup({
             },
           },
         },
-        configuringLiteLLM: {
+        configuringProxy: {
           invoke: {
-            src: 'configureLiteLLM',
+            src: 'configureProxy',
             input: ({ context }: { context: OrchestratorContext }) => ({
               config: context.config,
               entity: context.activeEntity!,
@@ -194,7 +194,7 @@ export const orchestratorMachine = setup({
             onDone: {
               target: '#orchestrator.running',
               actions: assign({
-                litellmRunning: true,
+                proxyRunning: true,
               }),
             },
             onError: {

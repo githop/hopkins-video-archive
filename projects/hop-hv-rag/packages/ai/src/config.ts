@@ -12,7 +12,7 @@ export interface ModelConfig {
 }
 
 const DEFAULT_CONFIG: ModelConfig = {
-  generation: 'summarizer-8b',
+  generation: 'summarizer-9b',
   embedding: 'embed-small',
   reranking: 'rerank-small',
 } as const;

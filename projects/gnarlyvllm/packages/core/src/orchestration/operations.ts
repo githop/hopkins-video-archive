@@ -19,13 +19,11 @@ import {
   VLLM_IMAGE,
 } from '../vllm/container.ts';
 import {
-  generateLiteLLMConfig,
-  buildLiteLLMContainerOptions,
-  waitForLiteLLMReady,
-  checkLiteLLMHealth,
-  LITELLM_IMAGE,
-} from '../litellm/index.ts';
-import { syncLiteLLMModels } from '../litellm/runtime.ts';
+  buildProxyContainerOptions,
+  waitForProxyReady,
+  PROXY_IMAGE,
+  PROXY_CONTAINER_NAME,
+} from '../proxy/index.ts';
 import {
   loadConfig,
   resolveModelConfig,
@@ -37,14 +35,14 @@ import {
 import type { ContainerStatus } from './types.ts';
 
 /**
- * Stop all vLLM containers (excluding LiteLLM)
+ * Stop all vLLM containers (excluding Proxy)
  */
 export async function stopAllVllmContainers(): Promise<void> {
   const result = await listContainers(true);
   if (!result.success || !result.data) return;
 
   const vllmContainers = result.data.filter(
-    (c) => c.name !== 'gnarlyvllm-litellm',
+    (c) => c.name !== `gnarlyvllm-${PROXY_CONTAINER_NAME}`,
   );
 
   for (const container of vllmContainers) {
@@ -66,10 +64,10 @@ export async function ensureImages(): Promise<void> {
     }
   }
 
-  if (!(await imageExists(LITELLM_IMAGE))) {
-    const result = await pullImage(LITELLM_IMAGE);
+  if (!(await imageExists(PROXY_IMAGE))) {
+    const result = await pullImage(PROXY_IMAGE);
     if (!result.success) {
-      throw new Error(`Failed to pull LiteLLM image: ${result.error}`);
+      throw new Error(`Failed to pull Proxy image: ${result.error}`);
     }
   }
 }
@@ -218,50 +216,29 @@ export async function startStack(
 }
 
 /**
- * Ensure LiteLLM is running with correct models
- * Either starts it fresh or hot-reloads the config
+ * Ensure Gnarly Proxy is running with correct models
  */
-export async function ensureLiteLLM(
+export async function ensureProxy(
   models: ResolvedModelConfig[],
   settings: Settings,
 ): Promise<void> {
-  const litellmContainer = await getContainer('litellm');
+  // Always restart the proxy to ensure fresh route map and bundled script
+  const existing = await getContainer(PROXY_CONTAINER_NAME);
+  if (existing) {
+    await stopContainer(PROXY_CONTAINER_NAME);
+    await removeContainer(PROXY_CONTAINER_NAME, true);
+  }
 
-  // If LiteLLM is not running, start it
-  if (!litellmContainer || litellmContainer.state !== 'running') {
-    // Remove any stopped container
-    if (litellmContainer) {
-      await removeContainer('litellm', true);
-    }
+  // Build and run container
+  const containerOptions = await buildProxyContainerOptions(models, settings);
+  const result = await runContainer(containerOptions);
+  if (!result.success) {
+    throw new Error(`Failed to start Proxy: ${result.error}`);
+  }
 
-    // Generate config and start container
-    const litellmConfig = generateLiteLLMConfig(models, settings);
-    const containerOptions = await buildLiteLLMContainerOptions({
-      config: litellmConfig,
-      settings,
-    });
-
-    const result = await runContainer(containerOptions);
-    if (!result.success) {
-      throw new Error(`Failed to start LiteLLM: ${result.error}`);
-    }
-
-    // Wait for ready
-    const ready = await waitForLiteLLMReady(
-      settings.litellm_port,
-      60000,
-      1000,
-      'litellm',
-    );
-    if (!ready) {
-      throw new Error('LiteLLM failed to start within timeout');
-    }
-  } else {
-    // LiteLLM is already running - hot-reload via API
-    if (await checkLiteLLMHealth(settings.litellm_port)) {
-      await syncLiteLLMModels(settings.litellm_port, models);
-    } else {
-      throw new Error('LiteLLM is running but not healthy');
-    }
+  // Wait for ready
+  const ready = await waitForProxyReady(settings.litellm_port, 10000);
+  if (!ready) {
+    throw new Error('Proxy failed to start within timeout');
   }
 }

@@ -21,5 +21,8 @@
   },
   "prettier": {
     "singleQuote": true
+  },
+  "dependencies": {
+    "hono": "^4.12.5"
   }
 }

@@ -4,6 +4,25 @@ import { z } from 'zod';
 export const ModelTaskSchema = z.enum(['generate', 'embed', 'score']);
 export type ModelTask = z.infer<typeof ModelTaskSchema>;
 
+// Performance modes supported by vLLM
+export const PerformanceModeSchema = z.enum([
+  'balanced',
+  'interactivity',
+  'throughput',
+]);
+export type PerformanceMode = z.infer<typeof PerformanceModeSchema>;
+
+// KV cache data types supported by vLLM
+export const KvCacheDtypeSchema = z.enum([
+  'auto',
+  'fp16',
+  'bf16',
+  'fp8',
+  'fp8_e4m3',
+  'fp8_e5m2',
+]);
+export type KvCacheDtype = z.infer<typeof KvCacheDtypeSchema>;
+
 // Quantization methods supported by vLLM
 export const QuantizationSchema = z.enum([
   'awq',
@@ -21,6 +40,8 @@ export const ModelDefaultsSchema = z.object({
   gpu_memory_utilization: z.number().min(0).max(1).optional(),
   max_model_len: z.union([z.number().int().positive(), z.string()]).optional(),
   quantization: QuantizationSchema.optional(),
+  performance_mode: PerformanceModeSchema.optional(),
+  kv_cache_dtype: KvCacheDtypeSchema.optional(),
   enforce_eager: z.boolean().optional(),
   enable_tool_calling: z.boolean().optional(),
   tool_call_parser: z.string().optional(),
@@ -37,7 +58,9 @@ export const ModelDefaultsSchema = z.object({
   speculative_config: z.string().optional(),
   language_model_only: z.boolean().optional(),
   default_chat_template_kwargs: z.string().optional(),
+  chat_template: z.string().optional(),
   enable_prefix_caching: z.boolean().optional(),
+  hf_overrides: z.string().optional(),
 });
 export type ModelDefaults = z.infer<typeof ModelDefaultsSchema>;
 
@@ -84,6 +107,8 @@ export type ResolvedModelConfig = ModelConfig & {
   gpu_memory_utilization?: number;
   max_model_len?: number | string;
   quantization?: Quantization;
+  performance_mode?: PerformanceMode;
+  kv_cache_dtype?: KvCacheDtype;
   enforce_eager?: boolean;
   enable_tool_calling?: boolean;
   tool_call_parser?: string;
@@ -100,5 +125,7 @@ export type ResolvedModelConfig = ModelConfig & {
   speculative_config?: string;
   language_model_only?: boolean;
   default_chat_template_kwargs?: string;
+  chat_template?: string;
   enable_prefix_caching?: boolean;
+  hf_overrides?: string;
 };

@@ -17,7 +17,7 @@ import type { GnarlyConfig } from '../config/schema.ts';
 export type OrchestratorContext = {
   config: GnarlyConfig;
   activeEntity: ActiveEntity | null;
-  litellmRunning: boolean;
+  proxyRunning: boolean;
   containerStatuses: ContainerStatus[];
   error: string | null;
 };
@@ -34,6 +34,6 @@ export type OrchestratorEvent =
   | { type: 'CONTAINER_READY'; name: string }
   | { type: 'CONTAINER_FAILED'; name: string; error: string }
   | { type: 'ALL_STOPPED' }
-  | { type: 'LITELLM_READY' }
-  | { type: 'LITELLM_FAILED'; error: string }
+  | { type: 'PROXY_READY' }
+  | { type: 'PROXY_FAILED'; error: string }
   | { type: 'DISMISS_ERROR' };

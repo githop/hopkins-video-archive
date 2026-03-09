@@ -227,5 +227,6 @@ const hostname = '0.0.0.0';
 export default {
   port: PORT,
   hostname,
+  idleTimeout: 255,
   fetch: app.fetch,
 };

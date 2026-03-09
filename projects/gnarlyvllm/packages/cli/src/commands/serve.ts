@@ -12,10 +12,8 @@ import {
   VLLM_IMAGE,
   pullImage,
   imageExists,
-  generateLiteLLMConfig,
-  buildLiteLLMContainerOptions,
-  waitForLiteLLMReady,
-  LITELLM_IMAGE,
+  ensureProxy,
+  PROXY_IMAGE,
   streamContainerLogs,
 } from '@gnarlyvllm/core';
 
@@ -82,9 +80,9 @@ export async function serveCommand(
       }
     }
 
-    if (!(await imageExists(LITELLM_IMAGE))) {
-      console.log(`Pulling image: ${LITELLM_IMAGE}`);
-      const pullResult = await pullImage(LITELLM_IMAGE);
+    if (!(await imageExists(PROXY_IMAGE))) {
+      console.log(`Pulling image: ${PROXY_IMAGE}`);
+      const pullResult = await pullImage(PROXY_IMAGE);
       if (!pullResult.success) {
         console.error(`Failed to pull image: ${pullResult.error}`);
         return 1;
@@ -144,45 +142,21 @@ export async function serveCommand(
 
     console.log('Model is ready.');
 
-    // Start LiteLLM proxy
-    console.log('Starting LiteLLM proxy...');
-    const litellmStartTime = Date.now();
+    // Start Gnarly Proxy
+    console.log('Starting Gnarly Proxy...');
+    const proxyStartTime = Date.now();
 
-    // Remove existing litellm container if any
-    const existingLitellm = await getContainer('litellm');
-    if (existingLitellm) {
-      await removeContainer('litellm', true);
-    }
-
-    const litellmConfig = generateLiteLLMConfig([model], config.settings);
-    const litellmContainerOptions = await buildLiteLLMContainerOptions({
-      config: litellmConfig,
-      settings: config.settings,
-    });
-
-    const litellmResult = await runContainer(litellmContainerOptions);
-    if (!litellmResult.success) {
-      console.error(`Failed to start LiteLLM: ${litellmResult.error}`);
+    try {
+      await ensureProxy([model], config.settings);
+    } catch (err: any) {
+      console.error(`Failed to start Proxy: ${err.message}`);
       return 1;
     }
 
-    const litellmReady = await waitForLiteLLMReady(
-      config.settings.litellm_port,
-      300000, // 5 minutes - 27B model needs extra time for backend verification
-      1000,
-      'litellm',
-    );
-    const litellmElapsed = Date.now() - litellmStartTime;
-    console.log(`LiteLLM startup took ${litellmElapsed}ms`);
+    const proxyElapsed = Date.now() - proxyStartTime;
+    console.log(`Proxy startup took ${proxyElapsed}ms`);
 
-    if (!litellmReady) {
-      console.error(
-        `LiteLLM failed to start within timeout (${litellmElapsed}ms elapsed).`,
-      );
-      return 1;
-    }
-
-    console.log('LiteLLM proxy is ready.');
+    console.log('Gnarly Proxy is ready.');
     console.log('');
     console.log('─'.repeat(50));
     console.log('Model served successfully!');

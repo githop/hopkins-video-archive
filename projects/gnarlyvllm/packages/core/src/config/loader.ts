@@ -4,6 +4,8 @@ import {
   type GnarlyConfig,
   type ResolvedModelConfig,
   type Quantization,
+  type PerformanceMode,
+  type KvCacheDtype,
 } from './schema.ts';
 
 const CONFIG_FILENAME = 'gnarlyvllm.toml';
@@ -67,6 +69,9 @@ export function resolveModelConfig(
   let gpu_memory_utilization = model.defaults?.gpu_memory_utilization;
   let max_model_len = model.defaults?.max_model_len;
   let quantization: Quantization | undefined = model.defaults?.quantization;
+  let performance_mode: PerformanceMode | undefined =
+    model.defaults?.performance_mode;
+  let kv_cache_dtype: KvCacheDtype | undefined = model.defaults?.kv_cache_dtype;
   let enforce_eager = model.defaults?.enforce_eager;
   let enable_tool_calling = model.defaults?.enable_tool_calling;
   let tool_call_parser = model.defaults?.tool_call_parser;
@@ -84,7 +89,9 @@ export function resolveModelConfig(
   let language_model_only = model.defaults?.language_model_only;
   let default_chat_template_kwargs =
     model.defaults?.default_chat_template_kwargs;
+  let chat_template = model.defaults?.chat_template;
   let enable_prefix_caching = model.defaults?.enable_prefix_caching;
+  let hf_overrides = model.defaults?.hf_overrides;
 
   // Apply stack overrides if specified
   if (stackName) {
@@ -106,6 +113,10 @@ export function resolveModelConfig(
         max_model_len = overrides.max_model_len;
       if (overrides.quantization !== undefined)
         quantization = overrides.quantization;
+      if (overrides.performance_mode !== undefined)
+        performance_mode = overrides.performance_mode;
+      if (overrides.kv_cache_dtype !== undefined)
+        kv_cache_dtype = overrides.kv_cache_dtype;
       if (overrides.enforce_eager !== undefined)
         enforce_eager = overrides.enforce_eager;
       if (overrides.enable_tool_calling !== undefined)
@@ -136,8 +147,12 @@ export function resolveModelConfig(
         language_model_only = overrides.language_model_only;
       if (overrides.default_chat_template_kwargs !== undefined)
         default_chat_template_kwargs = overrides.default_chat_template_kwargs;
+      if (overrides.chat_template !== undefined)
+        chat_template = overrides.chat_template;
       if (overrides.enable_prefix_caching !== undefined)
         enable_prefix_caching = overrides.enable_prefix_caching;
+      if (overrides.hf_overrides !== undefined)
+        hf_overrides = overrides.hf_overrides;
     }
   }
 
@@ -147,6 +162,8 @@ export function resolveModelConfig(
     gpu_memory_utilization,
     max_model_len,
     quantization,
+    performance_mode,
+    kv_cache_dtype,
     enforce_eager,
     enable_tool_calling,
     tool_call_parser,
@@ -163,7 +180,9 @@ export function resolveModelConfig(
     speculative_config,
     language_model_only,
     default_chat_template_kwargs,
+    chat_template,
     enable_prefix_caching,
+    hf_overrides,
   };
 }
 

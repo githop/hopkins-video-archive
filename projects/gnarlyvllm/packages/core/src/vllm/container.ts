@@ -2,6 +2,7 @@
  * vLLM container configuration and management
  */
 
+import path from 'node:path';
 import { type ContainerRunOptions, getContainer } from '../podman/client.ts';
 import type { ResolvedModelConfig, Settings } from '../config/schema.ts';
 
@@ -69,7 +70,7 @@ export function buildVllmContainerOptions(
   if (model.task === 'embed') {
     command.push('--runner', 'pooling', '--convert', 'embed');
   } else if (model.task === 'score') {
-    command.push('--runner', 'pooling', '--convert', 'reward');
+    command.push('--runner', 'pooling', '--convert', 'classify');
   }
   // 'generate' is the default, no flag needed
 
@@ -90,6 +91,16 @@ export function buildVllmContainerOptions(
   // Quantization method
   if (model.quantization) {
     command.push('--quantization', model.quantization);
+  }
+
+  // Performance mode
+  if (model.performance_mode) {
+    command.push('--performance-mode', model.performance_mode);
+  }
+
+  // KV cache precision
+  if (model.kv_cache_dtype) {
+    command.push('--kv-cache-dtype', model.kv_cache_dtype);
   }
 
   // Trust remote code (needed for some models)
@@ -174,9 +185,23 @@ export function buildVllmContainerOptions(
     );
   }
 
+  // Custom chat template
+  let chatTemplateMount: { host: string; container: string } | null = null;
+  if (model.chat_template) {
+    const hostPath = path.resolve(process.cwd(), model.chat_template);
+    const containerPath = '/app/custom_chat_template.jinja';
+    command.push('--chat-template', containerPath);
+    chatTemplateMount = { host: hostPath, container: containerPath };
+  }
+
   // Prefix caching
   if (model.enable_prefix_caching) {
     command.push('--enable-prefix-caching');
+  }
+
+  // HF Overrides (for Qwen3 rerankers, etc.)
+  if (model.hf_overrides) {
+    command.push('--hf-overrides', model.hf_overrides);
   }
 
   // Expand HF cache path
@@ -185,12 +210,17 @@ export function buildVllmContainerOptions(
   // Use custom image if specified on model, otherwise default
   const containerImage = image || model.image || VLLM_IMAGE;
 
+  const volumes = [{ host: hfCache, container: '/root/.cache/huggingface' }];
+  if (chatTemplateMount) {
+    volumes.push(chatTemplateMount);
+  }
+
   return {
     name,
     image: containerImage,
     ports: [{ host: model.port, container: model.port }],
     env,
-    volumes: [{ host: hfCache, container: '/root/.cache/huggingface' }],
+    volumes,
     devices: ['nvidia.com/gpu=all'],
     command,
     detach: true,

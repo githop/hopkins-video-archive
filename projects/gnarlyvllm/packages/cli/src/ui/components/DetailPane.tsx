@@ -5,7 +5,7 @@ import type {
   ResolvedModelConfig,
   ActiveEntity,
 } from '@gnarlyvllm/core';
-import { resolveModelConfig } from '@gnarlyvllm/core';
+import { resolveModelConfig, PROXY_CONTAINER_NAME } from '@gnarlyvllm/core';
 import type { Selection } from '../hooks/useSelection.ts';
 
 interface DetailPaneProps {
@@ -25,8 +25,10 @@ function inferActiveStack(
   config: GnarlyConfig,
   runningContainerNames: string[],
 ): string | undefined {
-  // Exclude litellm from the check
-  const runningModels = runningContainerNames.filter((n) => n !== 'litellm');
+  // Exclude proxy from the check
+  const runningModels = runningContainerNames.filter(
+    (n) => n !== PROXY_CONTAINER_NAME,
+  );
 
   for (const [stackName, stack] of Object.entries(config.stacks)) {
     const allModelsRunning = stack.models.every((m) =>
@@ -240,7 +242,7 @@ function buildFlagsFromResolved(model: ResolvedModelConfig): string[] {
   if (model.task === 'embed') {
     flags.push('--runner pooling --convert embed');
   } else if (model.task === 'score') {
-    flags.push('--runner pooling --convert reward');
+    flags.push('--runner pooling --convert classify');
   }
 
   // Read from top-level properties (not nested under defaults)
@@ -271,6 +273,9 @@ function buildFlagsFromResolved(model: ResolvedModelConfig): string[] {
   }
   if (model.num_scheduler_steps !== undefined) {
     flags.push(`--num-scheduler-steps ${model.num_scheduler_steps}`);
+  }
+  if (model.hf_overrides) {
+    flags.push(`--hf-overrides '${model.hf_overrides}'`);
   }
 
   // Always present flags

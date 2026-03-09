@@ -11,10 +11,8 @@ import {
   VLLM_IMAGE,
   pullImage,
   imageExists,
-  generateLiteLLMConfig,
-  buildLiteLLMContainerOptions,
-  waitForLiteLLMReady,
-  LITELLM_IMAGE,
+  ensureProxy,
+  PROXY_IMAGE,
   type ResolvedModelConfig,
 } from '@gnarlyvllm/core';
 
@@ -51,7 +49,7 @@ export async function startCommand(
     for (const model of models) {
       console.log(`  - ${model.name} (${model.task}) @ :${model.port}`);
     }
-    console.log(`  - litellm (proxy) @ :${config.settings.litellm_port}`);
+    console.log(`  - proxy (gnarly) @ :${config.settings.litellm_port}`);
     console.log('');
 
     // Track status
@@ -71,11 +69,11 @@ export async function startCommand(
         return 1;
       }
     }
-    if (!(await imageExists(LITELLM_IMAGE))) {
-      console.log(`Pulling ${LITELLM_IMAGE}...`);
-      const pullResult = await pullImage(LITELLM_IMAGE);
+    if (!(await imageExists(PROXY_IMAGE))) {
+      console.log(`Pulling ${PROXY_IMAGE}...`);
+      const pullResult = await pullImage(PROXY_IMAGE);
       if (!pullResult.success) {
-        console.error(`Failed to pull LiteLLM image: ${pullResult.error}`);
+        console.error(`Failed to pull Proxy image: ${pullResult.error}`);
         return 1;
       }
     }
@@ -166,54 +164,18 @@ export async function startCommand(
       return 1;
     }
 
-    // Start LiteLLM proxy
+    // Start Gnarly Proxy
     console.log('');
-    console.log('Starting LiteLLM proxy...');
+    console.log('Starting Gnarly Proxy...');
 
-    // Remove existing litellm container
-    const existingLitellm = await getContainer('litellm');
-    if (existingLitellm) {
-      await removeContainer('litellm', true);
-    }
-
-    // Generate LiteLLM config for running models only
-    const litellmConfig = generateLiteLLMConfig(runningModels, config.settings);
-    const litellmContainerOptions = await buildLiteLLMContainerOptions({
-      config: litellmConfig,
-      settings: config.settings,
-    });
-
-    const litellmResult = await runContainer(litellmContainerOptions);
-    if (!litellmResult.success) {
-      console.error(`Failed to start LiteLLM: ${litellmResult.error}`);
+    try {
+      await ensureProxy(runningModels, config.settings);
+    } catch (err: any) {
+      console.error(`Failed to start Proxy: ${err.message}`);
       return 1;
     }
 
-    // Wait for LiteLLM to be ready
-    const litellmReady = await waitForLiteLLMReady(
-      config.settings.litellm_port,
-      60000,
-      1000,
-      'litellm',
-    );
-    if (!litellmReady) {
-      const container = await getContainer('litellm');
-      if (
-        container &&
-        (container.state === 'exited' || container.state === 'stopped')
-      ) {
-        console.error(
-          'LiteLLM container exited unexpectedly. Check logs with: gnarlyvllm logs litellm',
-        );
-      } else {
-        console.error(
-          'LiteLLM failed to start. Check logs with: gnarlyvllm logs litellm',
-        );
-      }
-      return 1;
-    }
-
-    console.log('  litellm: ready');
+    console.log('  proxy: ready');
 
     // Print summary
     console.log('');
@@ -229,8 +191,9 @@ export async function startCommand(
         `  ${indicator} ${status.name.padEnd(20)} ${statusText.padEnd(10)} :${status.port}`,
       );
     }
+    const proxyIndicator = '●';
     console.log(
-      `  ● ${'litellm'.padEnd(20)} ${'running'.padEnd(10)} :${config.settings.litellm_port}`,
+      `  ${proxyIndicator} ${'proxy'.padEnd(20)} ${'running'.padEnd(10)} :${config.settings.litellm_port}`,
     );
 
     console.log('');

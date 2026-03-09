@@ -54,7 +54,7 @@ async function checkConfig(configPath?: string): Promise<number> {
     console.log('Config is valid!');
     console.log(`  Models: ${Object.keys(config.models).length}`);
     console.log(`  Stacks: ${Object.keys(config.stacks).length}`);
-    console.log(`  LiteLLM port: ${config.settings.litellm_port}`);
+    console.log(`  Proxy port: ${config.settings.litellm_port}`);
     return 0;
   } catch (err) {
     if (err instanceof ConfigError) {

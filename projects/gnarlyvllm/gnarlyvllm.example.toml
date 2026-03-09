@@ -2,7 +2,7 @@
 # Copy this file to gnarlyvllm.toml and customize for your setup
 
 [settings]
-# Port for the LiteLLM proxy (unified OpenAI-compatible endpoint)
+# Port for the Gnarly Proxy (unified OpenAI-compatible endpoint)
 litellm_port = 4000
 
 # HuggingFace cache directory (models are downloaded here)
@@ -19,9 +19,11 @@ port = 8000
 [models.qwen-7b-chat.defaults]
 gpu_memory_utilization = 0.5
 max_model_len = 32768
+performance_mode = "interactivity"  # balanced, interactivity, or throughput
+kv_cache_dtype = "fp8"  # auto, fp16, bf16, fp8, fp8_e4m3, fp8_e5m2
+enable_prefix_caching = true
 enable_tool_calling = true  # Enables --enable-auto-tool-choice --tool-call-parser hermes
 reasoning_parser = "qwen3"  # Enables --reasoning-parser qwen3
-enable_prefix_caching = true
 
 [models.bge-m3-embed]
 repo = "BAAI/bge-m3"

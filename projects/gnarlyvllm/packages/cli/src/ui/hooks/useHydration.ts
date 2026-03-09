@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { PROXY_CONTAINER_NAME } from '@gnarlyvllm/core';
 import type {
   GnarlyConfig,
   ContainerInfo,
@@ -17,7 +18,11 @@ export function useHydration(
 
     // Running models (without prefix)
     const runningModelNames = containers
-      .filter((c) => c.state === 'running' && c.name !== 'gnarlyvllm-litellm')
+      .filter(
+        (c) =>
+          c.state === 'running' &&
+          c.name !== `gnarlyvllm-${PROXY_CONTAINER_NAME}`,
+      )
       .map((c) => c.name.replace(/^gnarlyvllm-/, ''));
 
     if (runningModelNames.length === 0) return;

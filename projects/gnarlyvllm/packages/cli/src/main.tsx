@@ -2,14 +2,14 @@
 import { parseArgs } from 'node:util';
 
 const HELP = `
-gnarlyvllm - vLLM container orchestration with LiteLLM
+gnarlyvllm - vLLM container orchestration with Gnarly Proxy
 
 Usage:
   gnarlyvllm <command> [options]
 
 Commands:
-  serve <model>       Start a single model + LiteLLM proxy
-  start <stack>       Start all models in a stack + LiteLLM proxy
+  serve <model>       Start a single model + Gnarly Proxy
+  start <stack>       Start all models in a stack + Gnarly Proxy
   stop [name]         Stop model, stack, or all running containers
   status              Show running models and resource usage
   dashboard           Open interactive dashboard

@@ -62,6 +62,7 @@ port = 8004
 [models.rerank.defaults]
 gpu_memory_utilization = 0.9
 max_model_len = 4096
+hf_overrides = '{"architectures": ["Qwen3ForSequenceClassification"], "classifier_from_token": ["no", "yes"], "is_original_qwen3_reranker": true}'
 
 [models.summarizer-8b]
 repo = "Qwen/Qwen3-8B-AWQ"
@@ -73,6 +74,19 @@ gpu_memory_utilization = 0.9
 max_model_len = 8192
 reasoning_parser = "deepseek_r1"
 
+[models.summarizer-9b]
+repo = "QuantTrio/Qwen3.5-9B-AWQ"
+task = "generate"
+port = 8012
+
+[models.summarizer-9b.defaults]
+gpu_memory_utilization = 0.9
+max_model_len = 8192
+reasoning_parser = "qwen3"
+language_model_only = true
+default_chat_template_kwargs = '{"enable_thinking": false}'
+speculative_config = '{"method": "mtp", "num_speculative_tokens": 1}'
+
 [models.rerank-small]
 repo = "Qwen/Qwen3-Reranker-0.6B"
 task = "score"
@@ -81,6 +95,7 @@ port = 8007
 [models.rerank-small.defaults]
 gpu_memory_utilization = 0.15
 max_model_len = 4096
+hf_overrides = '{"architectures": ["Qwen3ForSequenceClassification"], "classifier_from_token": ["no", "yes"], "is_original_qwen3_reranker": true}'
 
 [models.summarizer-bulk-glm-flash]
 repo = "cyankiwi/GLM-4.7-Flash-AWQ-4bit"
@@ -164,6 +179,28 @@ gpu_memory_utilization = 0.15
 max_model_len = 4096
 enforce_eager = true
 
+[stacks.rag-full-9b]
+description = "9B Summarizer (Qwen 3.5) with 0.6B Reranker"
+models = ["summarizer-9b", "embed-small", "rerank-small"]
+
+[stacks.rag-full-9b.overrides.summarizer-9b]
+gpu_memory_utilization = 0.68
+max_model_len = 8192
+reasoning_parser = "qwen3"
+enforce_eager = true
+language_model_only = true
+performance_mode = "interactivity"
+
+[stacks.rag-full-9b.overrides.embed-small]
+gpu_memory_utilization = 0.1
+max_model_len = 4096
+enforce_eager = true
+
+[stacks.rag-full-9b.overrides.rerank-small]
+gpu_memory_utilization = 0.15
+max_model_len = 4096
+enforce_eager = true
+
 [models.summarizer-bulk-27b]
 repo = "QuantTrio/Qwen3.5-27B-AWQ"
 task = "generate"
@@ -178,3 +215,36 @@ reasoning_parser = "qwen3"
 language_model_only = true
 enable_prefix_caching = true
 default_chat_template_kwargs = '{"enable_thinking": false}'
+
+[models.summarizer-4b]
+repo = "QuantTrio/Qwen3.5-4B-AWQ"
+task = "generate"
+port = 8013
+
+[models.summarizer-4b.defaults]
+gpu_memory_utilization = 0.9
+max_model_len = 8192
+enforce_eager = true
+language_model_only = true
+reasoning_parser = "qwen3"
+default_chat_template_kwargs = '{"enable_thinking": false}'
+speculative_config = '{"method": "mtp", "num_speculative_tokens": 2}'
+
+[stacks.rag-full-4b]
+description = "4B Summarizer (Qwen 3.5) with 0.6B Reranker"
+models = ["summarizer-4b", "embed-small", "rerank-small"]
+
+[stacks.rag-full-4b.overrides.summarizer-4b]
+gpu_memory_utilization = 0.68
+performance_mode = "interactivity"
+kv_cache_dtype = "fp8"
+
+[stacks.rag-full-4b.overrides.embed-small]
+gpu_memory_utilization = 0.1
+max_model_len = 4096
+enforce_eager = true
+
+[stacks.rag-full-4b.overrides.rerank-small]
+gpu_memory_utilization = 0.15
+max_model_len = 4096
+enforce_eager = true
