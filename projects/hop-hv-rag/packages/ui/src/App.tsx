@@ -47,7 +47,7 @@ function App() {
               value={input}
               onChange={setInput}
               onSubmit={handleSearch}
-              disabled={phase === 'thinking'}
+              disabled={phase === 'thinking' || phase === 'answering'}
               showSuggestions={phase === 'idle'}
             />
           </div>
@@ -65,7 +65,10 @@ function App() {
               )}
 
               {/* Thinking State - Reasoning Block */}
-              {(phase === 'thinking' || phase === 'complete') && reasoning && (
+              {(phase === 'thinking' ||
+                phase === 'answering' ||
+                phase === 'complete') &&
+                reasoning && (
                 <ReasoningBlock
                   key={`reasoning-${phase}`}
                   reasoning={reasoning}
@@ -73,14 +76,12 @@ function App() {
                 />
               )}
 
-              {/* Complete State */}
-              {phase === 'complete' && (
+              {/* Answer */}
+              {(phase === 'answering' || phase === 'complete') && (
                 <>
-                  {/* Answer */}
                   {answer && <AnswerSection answer={answer} />}
 
-                  {/* Sources */}
-                  {sources.length > 0 && (
+                  {phase === 'complete' && sources.length > 0 && (
                     <SourceGrid
                       sources={sources}
                       usedSourceIds={usedSourceIds}

@@ -48,6 +48,7 @@ async function main() {
   logger.info('Searching the archive...');
 
   let reasoningStarted = false;
+  let answerStarted = false;
   const spinner = new Spinner('Thinking');
 
   for await (const chunk of archivist.query(query)) {
@@ -56,13 +57,25 @@ async function main() {
         spinner.start();
         reasoningStarted = true;
       }
-    } else if (chunk.type === 'result') {
-      if (reasoningStarted) {
-        spinner.stop();
+    } else if (chunk.type === 'answer-delta') {
+      if (!answerStarted) {
+        if (reasoningStarted) {
+          spinner.stop();
+        }
+        logger.print('--- Response ---\n');
+        answerStarted = true;
       }
-
-      logger.print('--- Response ---\n');
-      logger.print(chunk.answer);
+      process.stdout.write(chunk.text);
+    } else if (chunk.type === 'result') {
+      if (!answerStarted) {
+        if (reasoningStarted) {
+          spinner.stop();
+        }
+        logger.print('--- Response ---\n');
+        logger.print(chunk.answer);
+      } else {
+        process.stdout.write('\n');
+      }
 
       if (chunk.sources.length > 0) {
         // Group sources by used vs unused

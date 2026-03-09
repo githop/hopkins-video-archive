@@ -87,7 +87,7 @@ export class FamilyArchivist {
         yield { type: 'reasoning', text: part.text };
       } else if (part.type === 'text-delta') {
         answer += part.text;
-        yield { type: 'reasoning', text: part.text };
+        yield { type: 'answer-delta', text: part.text };
       }
     }
 

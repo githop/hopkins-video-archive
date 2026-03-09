@@ -7,9 +7,9 @@ interface ReasoningBlockProps {
 }
 
 export function ReasoningBlock({ reasoning, phase }: ReasoningBlockProps) {
-  // Start expanded during thinking, collapsed when complete
+  // Start expanded during thinking, collapsed when answering/complete
   // Key prop in parent ensures this re-initializes when phase changes
-  const [isExpanded, setIsExpanded] = useState(phase !== 'complete');
+  const [isExpanded, setIsExpanded] = useState(phase === 'thinking');
 
   // Toggle handler
   const toggleExpanded = useCallback(() => {

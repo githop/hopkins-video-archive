@@ -42,6 +42,10 @@ export const StreamChunkSchema = z.discriminatedUnion('type', [
     text: z.string(),
   }),
   z.object({
+    type: z.literal('answer-delta'),
+    text: z.string(),
+  }),
+  z.object({
     type: z.literal('result'),
     answer: z.string(),
     sources: z.array(SourceSchema),
@@ -55,6 +59,14 @@ export type StreamChunk = z.infer<typeof StreamChunkSchema>;
  * Reasoning chunk (model is thinking)
  */
 export type ReasoningChunk = Extract<StreamChunk, { type: 'reasoning' }>;
+
+/**
+ * Answer delta chunk (streaming answer text)
+ */
+export type AnswerDeltaChunk = Extract<
+  StreamChunk,
+  { type: 'answer-delta' }
+>;
 
 /**
  * Result chunk (final answer with sources)

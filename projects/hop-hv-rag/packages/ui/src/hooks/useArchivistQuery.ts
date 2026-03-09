@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { Source, StreamChunk } from '@hop-hv-rag/search';
 
-export type Phase = 'idle' | 'thinking' | 'complete' | 'error';
+export type Phase = 'idle' | 'thinking' | 'answering' | 'complete' | 'error';
 
 interface UseArchivistQueryResult {
   phase: Phase;
@@ -36,6 +36,8 @@ export function useArchivistQuery(): UseArchivistQueryResult {
       reset();
       setPhase('thinking');
 
+      let answerStarted = false;
+
       try {
         const response = await fetch('/api/query', {
           method: 'POST',
@@ -67,6 +69,12 @@ export function useArchivistQuery(): UseArchivistQueryResult {
 
             if (chunk.type === 'reasoning') {
               setReasoning((r) => r + chunk.text);
+            } else if (chunk.type === 'answer-delta') {
+              if (!answerStarted) {
+                answerStarted = true;
+                setPhase('answering');
+              }
+              setAnswer((current) => current + chunk.text);
             } else if (chunk.type === 'result') {
               setAnswer(chunk.answer);
               setSources(chunk.sources);

@@ -141,7 +141,7 @@ export function SearchBar({
 
           {/* Dynamic action button - right */}
           <div className="absolute inset-y-0 right-4 flex items-center">
-            {/* Only show clear/search buttons when not disabled (i.e., not in thinking phase) */}
+            {/* Only show clear/search buttons when not disabled */}
             {!disabled && (
               <>
                 {hasText ? (
