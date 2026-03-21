@@ -28,6 +28,7 @@ export const QuantizationSchema = z.enum([
   'awq',
   'awq_marlin',
   'gptq',
+  'gptq_marlin',
   'fp8',
   'bitsandbytes',
   'gguf',
@@ -61,6 +62,8 @@ export const ModelDefaultsSchema = z.object({
   chat_template: z.string().optional(),
   enable_prefix_caching: z.boolean().optional(),
   hf_overrides: z.string().optional(),
+  generation_config: z.string().optional(),
+  override_generation_config: z.record(z.any()).optional(),
 });
 export type ModelDefaults = z.infer<typeof ModelDefaultsSchema>;
 
@@ -128,4 +131,6 @@ export type ResolvedModelConfig = ModelConfig & {
   chat_template?: string;
   enable_prefix_caching?: boolean;
   hf_overrides?: string;
+  generation_config?: string;
+  override_generation_config?: Record<string, any>;
 };

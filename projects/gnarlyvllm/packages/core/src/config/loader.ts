@@ -92,6 +92,8 @@ export function resolveModelConfig(
   let chat_template = model.defaults?.chat_template;
   let enable_prefix_caching = model.defaults?.enable_prefix_caching;
   let hf_overrides = model.defaults?.hf_overrides;
+  let generation_config = model.defaults?.generation_config;
+  let override_generation_config = model.defaults?.override_generation_config;
 
   // Apply stack overrides if specified
   if (stackName) {
@@ -153,6 +155,10 @@ export function resolveModelConfig(
         enable_prefix_caching = overrides.enable_prefix_caching;
       if (overrides.hf_overrides !== undefined)
         hf_overrides = overrides.hf_overrides;
+      if (overrides.generation_config !== undefined)
+        generation_config = overrides.generation_config;
+      if (overrides.override_generation_config !== undefined)
+        override_generation_config = overrides.override_generation_config;
     }
   }
 
@@ -183,6 +189,8 @@ export function resolveModelConfig(
     chat_template,
     enable_prefix_caching,
     hf_overrides,
+    generation_config,
+    override_generation_config,
   };
 }
 

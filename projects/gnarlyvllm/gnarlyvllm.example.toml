@@ -24,6 +24,7 @@ kv_cache_dtype = "fp8"  # auto, fp16, bf16, fp8, fp8_e4m3, fp8_e5m2
 enable_prefix_caching = true
 enable_tool_calling = true  # Enables --enable-auto-tool-choice --tool-call-parser hermes
 reasoning_parser = "qwen3"  # Enables --reasoning-parser qwen3
+override_generation_config = { temperature = 1.0, top_p = 0.95, top_k = 20, min_p = 0.0, presence_penalty = 1.5, repetition_penalty = 1.0 } # Thinking mode for general tasks
 
 [models.bge-m3-embed]
 repo = "BAAI/bge-m3"

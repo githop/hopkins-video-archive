@@ -254,6 +254,7 @@ export class FamilyArchivist {
       '3. You may cite multiple sources in a single sentence: "Greg plays football [1] and later swims [2]."',
       '4. Cite at the end of sentences or clauses where the information appears.',
       '5. Be descriptive but concise.',
+      '6. KEEP YOUR INTERNAL REASONING VERY BRIEF. Only match the query to the sources and stop thinking.',
       '',
       'CONTEXT FROM ARCHIVE:',
       context,

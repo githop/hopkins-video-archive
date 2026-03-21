@@ -43,7 +43,9 @@ export function buildVllmContainerOptions(
   const { name, model, settings, hfToken, image } = config;
 
   // Build environment variables
-  const env: Record<string, string> = {};
+  const env: Record<string, string> = {
+    VLLM_USE_V1: '0',
+  };
 
   if (hfToken) {
     env['HF_TOKEN'] = hfToken;
@@ -202,6 +204,17 @@ export function buildVllmContainerOptions(
   // HF Overrides (for Qwen3 rerankers, etc.)
   if (model.hf_overrides) {
     command.push('--hf-overrides', model.hf_overrides);
+  }
+
+  // Generation config
+  if (model.generation_config) {
+    command.push('--generation-config', model.generation_config);
+  }
+  if (model.override_generation_config) {
+    command.push(
+      '--override-generation-config',
+      JSON.stringify(model.override_generation_config),
+    );
   }
 
   // Expand HF cache path
