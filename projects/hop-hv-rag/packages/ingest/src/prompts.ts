@@ -19,17 +19,6 @@ export const ChunkSummarySchema = z.object({
 export const CHUNK_SUMMARIZATION_PROMPT = `You are an expert film archivist cataloging the Hopkins family video archive.
 Analyze the provided transcript chunk and write an archival title and summary.
 
-HOPKINS FAMILY NAME MAPPINGS (use these canonical forms):
-- Gregory, Greggie, Greggy -> "Greg"
-- Jeffrey, Jeff -> "Geoff"
-- Margaret, Marge -> "Peggy"
-- Daniel, Dan, Danny -> "Danny"
-- Daddy, Dad, Father -> "Dad"
-- Mommy, Mom, Mama, Mother -> "Mom"
-- Grandma, Grandmother, Nana -> "Grandma"
-- Grandpa, Grandfather, Papa -> "Grandpa"
-- Keep specific names with titles: "Karen", "Uncle Matt", "Aunt Lisa", "Aunt Julia"
-
 RULES:
 1. TITLE CREATION: Create a short, descriptive title (5-10 words) that captures the main event.
 2. SUMMARY WRITING: Write a concise narrative paragraph (3-4 sentences) containing specific facts and events.

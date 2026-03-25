@@ -12,7 +12,7 @@ import {
  * - Embedding: Same as AI package default (embed-small)
  */
 const INGEST_DEFAULTS = {
-  generation: 'summarizer-bulk-27b' as GenerationModelName,
+  generation: 'summarizer-bulk-9b' as GenerationModelName,
   embedding: 'embed-small' as EmbeddingModelName,
 } as const;
 

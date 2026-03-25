@@ -92,7 +92,28 @@ override_generation_config = {
   min_p = 0.0, 
   presence_penalty = 0.0, 
   repetition_penalty = 1.0 
-  } # Thinking mode for precise coding tasks
+  }
+
+[models.summarizer-bulk-9b]
+repo = "QuantTrio/Qwen3.5-9B-AWQ"
+task = "generate"
+port = 8014
+
+[models.summarizer-bulk-9b.defaults]
+gpu_memory_utilization = 0.9
+max_model_len = 16384
+max_num_seqs = 12
+reasoning_parser = "qwen3"
+language_model_only = true
+enable_prefix_caching = true
+override_generation_config = { 
+  temperature = 0.6, 
+  top_p = 0.95, 
+  top_k = 20,
+  min_p = 0.0, 
+  presence_penalty = 0.0, 
+  repetition_penalty = 1.0 
+  }
 
 [models.rerank-small]
 repo = "Qwen/Qwen3-Reranker-0.6B"
@@ -197,14 +218,6 @@ reasoning_parser = "qwen3"
 enforce_eager = true
 language_model_only = true
 performance_mode = "interactivity"
-override_generation_config = { 
-  temperature = 0.6, 
-  top_p = 0.95, 
-  top_k = 20,
-  min_p = 0.0, 
-  presence_penalty = 0.0, 
-  repetition_penalty = 1.0 
-  } # Thinking mode for precise coding tasks
 
 [stacks.rag-full-9b.overrides.embed-small]
 gpu_memory_utilization = 0.1

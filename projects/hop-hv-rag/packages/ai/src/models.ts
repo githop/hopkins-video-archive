@@ -2,6 +2,7 @@ export const GENERATION_MODELS = {
   VLLM: [
     'summarizer',
     'summarizer-bulk',
+    'summarizer-bulk-9b',
     'summarizer-bulk-14b',
     'summarizer-bulk-27b',
     'summarizer-bulk-30b',
