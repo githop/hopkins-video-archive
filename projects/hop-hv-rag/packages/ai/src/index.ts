@@ -47,7 +47,7 @@ function getGoogleProvider(): GoogleProvider {
 }
 
 export function getGenModel(
-  modelName: GenerationModelName = 'summarizer-bulk-30b',
+  modelName: GenerationModelName = 'ingest-qwen3-30b',
 ): LanguageModel {
   if (isGoogleModel(modelName)) {
     return getGoogleProvider()(modelName);
@@ -61,7 +61,7 @@ export function getGenModel(
 }
 
 export function getEmbedModel(
-  modelName: EmbeddingModelName = 'embed',
+  modelName: EmbeddingModelName = 'embed-qwen3-4b',
 ): EmbeddingModel {
   if (isGoogleEmbedModel(modelName)) {
     return getGoogleProvider().textEmbeddingModel(modelName);
@@ -127,7 +127,7 @@ class LiteLLMReranker implements RerankingModelV3 {
 }
 
 export function getRerankModel(
-  modelName: RerankingModelName = 'rerank',
+  modelName: RerankingModelName = 'rerank-qwen3-4b',
 ): RerankingModel {
   if (isGoogleRerankingModel(modelName)) {
     throw new Error('Google reranking not yet implemented in provider');

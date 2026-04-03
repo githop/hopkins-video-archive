@@ -1,26 +1,27 @@
 export const GENERATION_MODELS = {
   VLLM: [
-    'summarizer',
-    'summarizer-bulk',
-    'summarizer-bulk-9b',
-    'summarizer-bulk-14b',
-    'summarizer-bulk-27b',
-    'summarizer-bulk-30b',
-    'summarizer-4b',
-    'summarizer-8b',
-    'summarizer-9b',
-    'summarizer-bulk-glm-flash',
+    'chat-qwen3-4b',
+    'ingest-qwen3-4b',
+    'ingest-qwen3.5-9b',
+    'ingest-qwen3-14b',
+    'ingest-qwen3.5-27b',
+    'ingest-qwen3-30b',
+    'chat-qwen3.5-4b',
+    'chat-qwen3-8b',
+    'chat-qwen3.5-9b',
+    'ingest-glm4.7-flash',
+    'chat-gemma4-e4b',
   ] as const,
   GOOGLE: ['gemini-3-flash-preview'] as const,
 } as const;
 
 export const EMBEDDING_MODELS = {
-  VLLM: ['embed', 'embed-small'] as const,
+  VLLM: ['embed-qwen3-4b', 'embed-qwen3-0.6b'] as const,
   GOOGLE: [] as const,
 } as const;
 
 export const RERANKING_MODELS = {
-  VLLM: ['rerank', 'rerank-small'] as const,
+  VLLM: ['rerank-qwen3-4b', 'rerank-qwen3-0.6b'] as const,
   GOOGLE: [] as const,
 } as const;
 

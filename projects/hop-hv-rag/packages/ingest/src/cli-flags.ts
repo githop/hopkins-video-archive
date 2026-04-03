@@ -9,11 +9,11 @@ import {
 /**
  * Ingest-specific defaults differ from the general AI package defaults.
  * - Generation: We prefer the bulk 14B model for ingest workloads
- * - Embedding: Same as AI package default (embed-small)
+ * - Embedding: Same as AI package default (embed-qwen3-0.6b)
  */
 const INGEST_DEFAULTS = {
-  generation: 'summarizer-bulk-9b' as GenerationModelName,
-  embedding: 'embed-small' as EmbeddingModelName,
+  generation: 'ingest-qwen3.5-9b' as GenerationModelName,
+  embedding: 'embed-qwen3-0.6b' as EmbeddingModelName,
 } as const;
 
 /**

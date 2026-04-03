@@ -2,51 +2,51 @@
 litellm_port = 4000
 huggingface_cache = "~/.cache/huggingface"
 
-[models.summarizer]
+[models.chat-qwen3-4b]
 repo = "Qwen/Qwen3-4B-AWQ"
 task = "generate"
 port = 8001
 
-[models.summarizer.defaults]
+[models.chat-qwen3-4b.defaults]
 max_model_len = 32768
 gpu_memory_utilization = 0.9
 
-[models.embed]
+[models.embed-qwen3-4b]
 repo = "Qwen/Qwen3-Embedding-4B"
 task = 'embed'
 port = 8002
 
-[models.embed.defaults]
+[models.embed-qwen3-4b.defaults]
 max_model_len = 32768
 gpu_memory_utilization = 0.9
 
 
-[models.embed-small]
+[models."embed-qwen3-0.6b"]
 repo = "Qwen/Qwen3-Embedding-0.6B"
 task = 'embed'
 port = 8005
 
-[models.embed-small.defaults]
+[models."embed-qwen3-0.6b".defaults]
 max_model_len = 32768
 gpu_memory_utilization = 0.9
 
-[models.summarizer-bulk]
+[models.ingest-qwen3-4b]
 repo = "Qwen/Qwen3-4B-AWQ"
 task = "generate"
 port = 8003 
 
-[models.summarizer-bulk.defaults]
+[models.ingest-qwen3-4b.defaults]
 gpu_memory_utilization = 0.95
 max_model_len = 8192
 max_num_seqs = 32           # High concurrency support
 reasoning_parser = "qwen3"
 
-[models.summarizer-bulk-14b]
+[models.ingest-qwen3-14b]
 repo = "Qwen/Qwen3-14B-AWQ"
 task = "generate"
 port = 8006
 
-[models.summarizer-bulk-14b.defaults]
+[models.ingest-qwen3-14b.defaults]
 gpu_memory_utilization = 0.9
 max_model_len = 8192               # Good context length for batches
 enable_reasoning = true
@@ -54,32 +54,32 @@ reasoning_parser = "deepseek_r1"
 max_num_seqs = 16                  # Higher concurrency than 32B model
 enforce_eager = true               # Avoid CUDA graph overhead for varying lengths
 
-[models.rerank]
+[models.rerank-qwen3-4b]
 repo = "Qwen/Qwen3-Reranker-4B"
 task = "score"
 port = 8004
 
-[models.rerank.defaults]
+[models.rerank-qwen3-4b.defaults]
 gpu_memory_utilization = 0.9
 max_model_len = 4096
 hf_overrides = '{"architectures": ["Qwen3ForSequenceClassification"], "classifier_from_token": ["no", "yes"], "is_original_qwen3_reranker": true}'
 
-[models.summarizer-8b]
+[models.chat-qwen3-8b]
 repo = "Qwen/Qwen3-8B-AWQ"
 task = "generate"
 port = 8009
 
-[models.summarizer-8b.defaults]
+[models.chat-qwen3-8b.defaults]
 gpu_memory_utilization = 0.9
 max_model_len = 8192
 reasoning_parser = "deepseek_r1"
 
-[models.summarizer-9b]
+[models."chat-qwen3.5-9b"]
 repo = "QuantTrio/Qwen3.5-9B-AWQ"
 task = "generate"
 port = 8012
 
-[models.summarizer-9b.defaults]
+[models."chat-qwen3.5-9b".defaults]
 gpu_memory_utilization = 0.9
 max_model_len = 8192
 reasoning_parser = "qwen3"
@@ -94,12 +94,12 @@ override_generation_config = {
   repetition_penalty = 1.0 
   }
 
-[models.summarizer-bulk-9b]
+[models."ingest-qwen3.5-9b"]
 repo = "QuantTrio/Qwen3.5-9B-AWQ"
 task = "generate"
 port = 8014
 
-[models.summarizer-bulk-9b.defaults]
+[models."ingest-qwen3.5-9b".defaults]
 gpu_memory_utilization = 0.9
 max_model_len = 16384
 max_num_seqs = 12
@@ -115,103 +115,87 @@ override_generation_config = {
   repetition_penalty = 1.0 
   }
 
-[models.rerank-small]
+[models."rerank-qwen3-0.6b"]
 repo = "Qwen/Qwen3-Reranker-0.6B"
 task = "score"
 port = 8007
 
-[models.rerank-small.defaults]
+[models."rerank-qwen3-0.6b".defaults]
 gpu_memory_utilization = 0.15
 max_model_len = 4096
 hf_overrides = '{"architectures": ["Qwen3ForSequenceClassification"], "classifier_from_token": ["no", "yes"], "is_original_qwen3_reranker": true}'
 
-[models.summarizer-bulk-glm-flash]
+[models."ingest-glm4.7-flash"]
 repo = "cyankiwi/GLM-4.7-Flash-AWQ-4bit"
 task = "generate"
 port = 8008
 image = "gnarlyvllm/glm-compat:latest"
 
-[models.summarizer-bulk-glm-flash.defaults]
+[models."ingest-glm4.7-flash".defaults]
 gpu_memory_utilization = 0.9
 max_model_len = 8192
 # reasoning_parser = "glm45"
 max_num_seqs = 16
 enforce_eager = true
 
-[models.summarizer-bulk-30b]
+[models.ingest-qwen3-30b]
 repo = "QuantTrio/Qwen3-30B-A3B-Thinking-2507-AWQ"
 task = "generate"
 port = 8010
 
-[models.summarizer-bulk-30b.defaults]
+[models.ingest-qwen3-30b.defaults]
 gpu_memory_utilization = 0.9
 max_model_len = 16384
 max_num_seqs = 6
 enable_expert_parallel = true
 reasoning_parser = "deepseek_r1"
 
-[stacks.rag]
-description = "Chat and Embedding stack for RAG"
-models = ["summarizer", "embed"]
 
-[stacks.rag.overrides.summarizer]
-gpu_memory_utilization = 0.45
-max_model_len = 8192
-enable_tool_calling = true
-tool_call_parser = "qwen3"
-reasoning_parser = "qwen3"
-enforce_eager = true
-
-[stacks.rag.overrides.embed]
-gpu_memory_utilization = 0.45
-max_model_len = 4096
-enforce_eager = true
-
-[stacks.rag-full]
+[stacks.rag-qwen3-4b]
 description = "Summarizer-based RAG stack with Embedding and Reranking"
-models = ["summarizer", "embed-small", "rerank"]
+models = ["chat-qwen3-4b", "embed-qwen3-0.6b", "rerank-qwen3-4b"]
 
-[stacks.rag-full.overrides.summarizer]
+[stacks.rag-qwen3-4b.overrides.chat-qwen3-4b]
 gpu_memory_utilization = 0.38
 max_model_len = 8192
 reasoning_parser = "qwen3"
 enforce_eager = true
 
-[stacks.rag-full.overrides.embed-small]
+[stacks.rag-qwen3-4b.overrides."embed-qwen3-0.6b"]
 gpu_memory_utilization = 0.1
 max_model_len = 4096
 enforce_eager = true
 
-[stacks.rag-full.overrides.rerank]
+[stacks.rag-qwen3-4b.overrides.rerank-qwen3-4b]
 gpu_memory_utilization = 0.38
 max_model_len = 4096
 enforce_eager = true
 
-[stacks.rag-full-8b]
+[stacks.rag-qwen3-8b]
 description = "8B Summarizer with 0.6B Reranker for better tool calling and reasoning"
-models = ["summarizer-8b", "embed-small", "rerank-small"]
+models = ["chat-qwen3-8b", "embed-qwen3-0.6b", "rerank-qwen3-0.6b"]
 
-[stacks.rag-full-8b.overrides.summarizer-8b]
+[stacks.rag-qwen3-8b.overrides.chat-qwen3-8b]
 gpu_memory_utilization = 0.55
 max_model_len = 8192
 reasoning_parser = "deepseek_r1"
 enforce_eager = true
 
-[stacks.rag-full-8b.overrides.embed-small]
+[stacks.rag-qwen3-8b.overrides."embed-qwen3-0.6b"]
 gpu_memory_utilization = 0.1
 max_model_len = 4096
 enforce_eager = true
 
-[stacks.rag-full-8b.overrides.rerank-small]
+[stacks.rag-qwen3-8b.overrides."rerank-qwen3-0.6b"]
 gpu_memory_utilization = 0.15
 max_model_len = 4096
 enforce_eager = true
 
-[stacks.rag-full-9b]
+[stacks."rag-qwen3.5-9b"]
 description = "9B Summarizer (Qwen 3.5) with 0.6B Reranker"
-models = ["summarizer-9b", "embed-small", "rerank-small"]
+models = ["chat-qwen3.5-9b", "embed-qwen3-0.6b", "rerank-qwen3-0.6b"]
 
-[stacks.rag-full-9b.overrides.summarizer-9b]
+[stacks."rag-qwen3.5-9b".overrides."chat-qwen3.5-9b"]
 gpu_memory_utilization = 0.68
 max_model_len = 8192
 reasoning_parser = "qwen3"
@@ -219,22 +203,22 @@ enforce_eager = true
 language_model_only = true
 performance_mode = "interactivity"
 
-[stacks.rag-full-9b.overrides.embed-small]
+[stacks."rag-qwen3.5-9b".overrides."embed-qwen3-0.6b"]
 gpu_memory_utilization = 0.1
 max_model_len = 4096
 enforce_eager = true
 
-[stacks.rag-full-9b.overrides.rerank-small]
+[stacks."rag-qwen3.5-9b".overrides."rerank-qwen3-0.6b"]
 gpu_memory_utilization = 0.15
 max_model_len = 4096
 enforce_eager = true
 
-[models.summarizer-bulk-27b]
+[models."ingest-qwen3.5-27b"]
 repo = "Qwen/Qwen3.5-27B-GPTQ-Int4"
 task = "generate"
 port = 8011
 
-[models.summarizer-bulk-27b.defaults]
+[models."ingest-qwen3.5-27b".defaults]
 gpu_memory_utilization = 0.85
 max_model_len = 4096
 quantization = "gptq_marlin"
@@ -242,12 +226,12 @@ enforce_eager = true
 reasoning_parser = "qwen3"
 max_num_seqs = 4
 
-[models.summarizer-4b]
+[models."chat-qwen3.5-4b"]
 repo = "QuantTrio/Qwen3.5-4B-AWQ"
 task = "generate"
 port = 8013
 
-[models.summarizer-4b.defaults]
+[models."chat-qwen3.5-4b".defaults]
 gpu_memory_utilization = 0.9
 max_model_len = 8192
 enforce_eager = true
@@ -256,21 +240,54 @@ reasoning_parser = "qwen3"
 default_chat_template_kwargs = '{"enable_thinking": false}'
 speculative_config = '{"method": "mtp", "num_speculative_tokens": 2}'
 
-[stacks.rag-full-4b]
+[stacks."rag-qwen3.5-4b"]
 description = "4B Summarizer (Qwen 3.5) with 0.6B Reranker"
-models = ["summarizer-4b", "embed-small", "rerank-small"]
+models = ["chat-qwen3.5-4b", "embed-qwen3-0.6b", "rerank-qwen3-0.6b"]
 
-[stacks.rag-full-4b.overrides.summarizer-4b]
+[stacks."rag-qwen3.5-4b".overrides."chat-qwen3.5-4b"]
 gpu_memory_utilization = 0.68
 performance_mode = "interactivity"
 kv_cache_dtype = "fp8"
 
-[stacks.rag-full-4b.overrides.embed-small]
+[stacks."rag-qwen3.5-4b".overrides."embed-qwen3-0.6b"]
 gpu_memory_utilization = 0.1
 max_model_len = 4096
 enforce_eager = true
 
-[stacks.rag-full-4b.overrides.rerank-small]
+[stacks."rag-qwen3.5-4b".overrides."rerank-qwen3-0.6b"]
 gpu_memory_utilization = 0.15
+max_model_len = 4096
+enforce_eager = true
+
+[models.chat-gemma4-e4b]
+repo = "google/gemma-4-E4B-it"
+task = "generate"
+port = 8015
+image = "gnarlyvllm/gemma4-compat:latest"
+
+[models.chat-gemma4-e4b.defaults]
+gpu_memory_utilization = 0.9
+max_model_len = 8192
+enforce_eager = true
+language_model_only = true
+reasoning_parser = "gemma4"
+
+[stacks.rag-gemma4-e4b]
+description = "Gemma 4 E4B Summarizer with 0.6B Embedding and Reranker"
+models = ["chat-gemma4-e4b", "embed-qwen3-0.6b", "rerank-qwen3-0.6b"]
+
+[stacks.rag-gemma4-e4b.overrides.chat-gemma4-e4b]
+gpu_memory_utilization = 0.75
+max_model_len = 8192
+enforce_eager = true
+performance_mode = "interactivity"
+
+[stacks.rag-gemma4-e4b.overrides."embed-qwen3-0.6b"]
+gpu_memory_utilization = 0.12
+max_model_len = 4096
+enforce_eager = true
+
+[stacks.rag-gemma4-e4b.overrides."rerank-qwen3-0.6b"]
+gpu_memory_utilization = 0.08
 max_model_len = 4096
 enforce_eager = true

@@ -46,14 +46,14 @@ Edit `gnarlyvllm.toml` to define your models and stacks:
 litellm_port = 4000
 huggingface_cache = "~/.cache/huggingface"
 
-[models.qwen-7b-chat]
+[models.chat-qwen-7b]
 repo = "Qwen/Qwen2.5-7B-Instruct-AWQ"
 task = "generate"
 port = 8000
 
-[stacks.home-video-rag]
+[stacks.rag-qwen-7b]
 description = "RAG stack for video transcriptions"
-models = ["qwen-7b-chat", "bge-m3-embed"]
+models = ["chat-qwen-7b", "embed-bge-m3"]
 ```
 
 ## Usage
@@ -62,10 +62,10 @@ GnarlyvLLM provides a straightforward CLI for managing your models:
 
 ```bash
 # Start a single model and the Gnarly Proxy
-bun gnarlyvllm serve qwen-7b-chat
+bun gnarlyvllm serve chat-qwen-7b
 
 # Start a predefined stack of models
-bun gnarlyvllm start home-video-rag
+bun gnarlyvllm start rag-qwen-7b
 
 # Check the status of running containers
 bun gnarlyvllm status

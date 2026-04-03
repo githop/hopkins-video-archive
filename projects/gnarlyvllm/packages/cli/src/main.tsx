@@ -24,8 +24,8 @@ Options:
   -c, --config        Path to config file (default: ./gnarlyvllm.toml)
 
 Examples:
-  gnarlyvllm serve qwen-7b-chat
-  gnarlyvllm start home-video-rag
+  gnarlyvllm serve chat-qwen-7b
+  gnarlyvllm start rag-qwen-7b
   gnarlyvllm stop
   gnarlyvllm status
 `;

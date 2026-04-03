@@ -73,7 +73,7 @@ All scripts support these common flags:
 bun run ingest:chunk --file "1995-2.m4v"
 
 # Process all videos with specific model
-bun run ingest:summarize-chunks --gen-model summarizer-bulk-30b
+bun run ingest:summarize-chunks --gen-model ingest-qwen3-30b
 
 # Force reprocessing (ignore cache)
 bun run ingest:extract-entities --force

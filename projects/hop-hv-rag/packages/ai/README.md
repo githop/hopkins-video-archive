@@ -19,7 +19,7 @@ Use the exported `generateText` wrapper to automatically handle reasoning extrac
 import { generateText } from '@hop-hv-rag/ai';
 
 const { text, reasoningText } = await generateText({
-  model: getGenModel('summarizer-9b'),
+  model: getGenModel('chat-qwen3.5-9b'),
   prompt: '...',
 });
 
@@ -36,7 +36,7 @@ Streaming also supports reasoning deltas via `streamText`:
 import { streamText } from '@hop-hv-rag/ai';
 
 const result = streamText({
-  model: getGenModel('summarizer-9b'),
+  model: getGenModel('chat-qwen3.5-9b'),
   prompt: '...',
 });
 

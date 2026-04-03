@@ -12,9 +12,9 @@ export interface ModelConfig {
 }
 
 const DEFAULT_CONFIG: ModelConfig = {
-  generation: 'summarizer-9b',
-  embedding: 'embed-small',
-  reranking: 'rerank-small',
+  generation: 'chat-qwen3.5-9b',
+  embedding: 'embed-qwen3-0.6b',
+  reranking: 'rerank-qwen3-0.6b',
 } as const;
 
 export function getDefaultConfig(): ModelConfig {

@@ -12,7 +12,7 @@ async function main() {
 
   // We use the 'sql' template for raw sqlite-vec operations
   // vec0 is the virtual table type for sqlite-vec
-  // dimension count: 1024 for Qwen3-Embedding-0.6B (embed-small)
+  // dimension count: 1024 for Qwen3-Embedding-0.6B (embed-qwen3-0.6b)
 
   logger.info('Creating vec_chunks...');
   await db.run(

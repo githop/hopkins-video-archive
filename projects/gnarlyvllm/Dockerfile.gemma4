@@ -1,0 +1,15 @@
+# Dockerfile for Google Gemma 4 model support
+# Uses vllm-openai:latest (0.19.0+) which includes native Gemma4ForCausalLM
+# Need transformers from git for Gemma 4 model type (not in stable release yet)
+
+FROM docker.io/vllm/vllm-openai:latest
+
+# Install git
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
+# Install transformers from git main (Gemma 4 support not in stable release yet)
+RUN pip install --no-cache-dir --force-reinstall \
+    "transformers @ git+https://github.com/huggingface/transformers.git@main"
+
+LABEL maintainer="gnarlyvllm"
+LABEL description="vLLM 0.19.0+ with transformers main branch for Google Gemma 4 support"
