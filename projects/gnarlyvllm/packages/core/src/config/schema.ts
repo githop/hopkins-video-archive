@@ -33,6 +33,8 @@ export const QuantizationSchema = z.enum([
   'bitsandbytes',
   'gguf',
   'compressed-tensors',
+  'autoround',
+  'inc',
 ]);
 export type Quantization = z.infer<typeof QuantizationSchema>;
 

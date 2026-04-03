@@ -12,7 +12,7 @@ import {
  * - Embedding: Same as AI package default (embed-qwen3-0.6b)
  */
 const INGEST_DEFAULTS = {
-  generation: 'ingest-qwen3.5-9b' as GenerationModelName,
+  generation: 'ingest-gemma4-31b' as GenerationModelName,
   embedding: 'embed-qwen3-0.6b' as EmbeddingModelName,
 } as const;
 

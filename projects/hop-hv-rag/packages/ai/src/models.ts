@@ -11,6 +11,7 @@ export const GENERATION_MODELS = {
     'chat-qwen3.5-9b',
     'ingest-glm4.7-flash',
     'chat-gemma4-e4b',
+    'ingest-gemma4-31b',
   ] as const,
   GOOGLE: ['gemini-3-flash-preview'] as const,
 } as const;

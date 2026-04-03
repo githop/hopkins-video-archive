@@ -291,3 +291,19 @@ enforce_eager = true
 gpu_memory_utilization = 0.08
 max_model_len = 4096
 enforce_eager = true
+
+[models."ingest-gemma4-31b"]
+repo = "Intel/gemma-4-31B-it-int4-AutoRound"
+task = "generate"
+port = 8016
+image = "gnarlyvllm/gemma4-compat:latest"
+
+[models."ingest-gemma4-31b".defaults]
+gpu_memory_utilization = 0.95
+max_model_len = 4096
+max_num_seqs = 4
+enforce_eager = true
+reasoning_parser = "gemma4"
+enable_reasoning = true
+enable_prefix_caching = true
+quantization = "inc"
