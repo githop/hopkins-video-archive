@@ -5,7 +5,6 @@ import { FFMPEG } from "./ffmpeg";
 import { WorkerBridge } from "./worker-bridge";
 import { Logger } from "./logger";
 import { ensureDir } from "./utils";
-import { jsonToSrt, jsonToVtt, jsonToTxt } from "./formatters";
 
 async function main() {
   const { values } = parseArgs({
@@ -60,23 +59,6 @@ async function main() {
       const result = await worker.transcribe(videoName, audioPath);
 
       if (result && result.status === "completed") {
-        const jsonPath = join(CONFIG.TRANSCRIPTS_DIR, `${baseName}.json`);
-        const jsonFile = Bun.file(jsonPath);
-        
-        const jsonContent = await jsonFile.json();
-        const segments = jsonContent.segments;
-
-        if (CONFIG.GENERATE_SRT) {
-          await Bun.write(srtPath, jsonToSrt(segments));
-        }
-        if (CONFIG.GENERATE_VTT) {
-          const vttPath = join(CONFIG.TRANSCRIPTS_DIR, `${baseName}.vtt`);
-          await Bun.write(vttPath, jsonToVtt(segments));
-        }
-        
-        const txtPath = join(CONFIG.TRANSCRIPTS_DIR, `${baseName}.txt`);
-        await Bun.write(txtPath, jsonToTxt(segments));
-
         Logger.info(`Successfully processed ${videoName}`);
       } else {
         Logger.error(`Transcription failed for ${videoName}: ${result?.message || "Unknown error"}`);

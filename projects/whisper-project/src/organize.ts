@@ -81,7 +81,7 @@ async function main() {
       }
 
       // 3. Upload Artifacts
-      const extensions = [".srt", ".vtt", ".json", ".txt"];
+      const extensions = [".srt", ".vtt", ".json", ".txt", ".tsv"];
       for (const ext of extensions) {
         const localPath = join(CONFIG.TRANSCRIPTS_DIR, baseName + ext);
         const file = Bun.file(localPath);

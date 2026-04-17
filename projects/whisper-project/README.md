@@ -9,8 +9,9 @@
 - ☁️ **Google Drive Integration**: Authenticate and download video files directly from designated Drive folders.
 - ⚡ **High-Speed Transcription**: Utilizes **WhisperX** (large-v3) with batch processing for transcription speeds significantly faster than real-time.
 - 📏 **Forced Alignment**: Uses phoneme-level alignment to ensure timestamps are perfectly synced with the audio.
+- 👥 **Optional Speaker Diarization**: Can assign speaker labels (`SPEAKER_00`, `SPEAKER_01`, ...) using pyannote via WhisperX.
 - 🔄 **Polyglot Architecture**: Orchestrated with **Bun (TypeScript)** for high-level logic and **Python** for GPU-intensive ML tasks, connected via a robust subprocess bridge.
-- 📂 **Multiple Export Formats**: Automatically generates `.json`, `.srt`, `.vtt`, and `.txt` files for every video.
+- 📂 **Multiple Export Formats**: Automatically generates WhisperX outputs (`.json`, `.srt`, `.vtt`, `.txt`, `.tsv`) for every video.
 - 🛠️ **Ffmpeg Integration**: Efficient audio extraction and preprocessing before transcription.
 
 ## System Architecture
@@ -60,6 +61,19 @@ Follow the URL to authorize the application. This will save a `token.json` for s
 ### 3. Configuration
 
 Review `src/config.ts` or set appropriate environment variables for your Google Drive folder IDs and local paths.
+
+To enable diarization, set these in `.env`:
+
+```bash
+ENABLE_DIARIZATION=true
+HF_TOKEN=hf_xxx
+# Optional tuning:
+# MIN_SPEAKERS=2
+# MAX_SPEAKERS=4
+# DIARIZATION_MODEL=pyannote/speaker-diarization-community-1
+```
+
+You must also accept the Hugging Face terms for the pyannote diarization model.
 
 ## Usage
 

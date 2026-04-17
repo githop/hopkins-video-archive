@@ -147,8 +147,16 @@ export class WorkerBridge {
         id,
         audio_path: audioPath,
         output_dir: CONFIG.TRANSCRIPTS_DIR,
+        output_format: CONFIG.WHISPER.OUTPUT_FORMAT,
+        model_name: CONFIG.WHISPER.MODEL,
         batch_size: CONFIG.WHISPER.BATCH_SIZE,
+        language: CONFIG.WHISPER.LANGUAGE,
         compute_type: CONFIG.WHISPER.COMPUTE_TYPE,
+        enable_diarization: CONFIG.DIARIZATION.ENABLED,
+        hf_token: CONFIG.DIARIZATION.HF_TOKEN,
+        min_speakers: CONFIG.DIARIZATION.MIN_SPEAKERS,
+        max_speakers: CONFIG.DIARIZATION.MAX_SPEAKERS,
+        diarize_model: CONFIG.DIARIZATION.MODEL,
       });
 
       this.worker?.stdin.write(payload + "\n");
