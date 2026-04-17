@@ -47,11 +47,10 @@ async function main() {
     dbQuery: `
       SELECT
         raw_text AS value,
-        GROUP_CONCAT(SUBSTR(evidence_text, 1, 120), ' | ') AS context
+        SUBSTR(evidence_text, 1, 120) AS context
       FROM chunk_entity_mentions
       WHERE entity_type = 'ACTIVITY'
         AND entity_id IS NULL
-      GROUP BY raw_text
     `,
     dbValueColumn: 'value',
     dbContextColumn: 'context',

@@ -269,12 +269,13 @@ INPUT FORMAT:
 
 HOPKINS FAMILY NAME MAPPINGS (use these canonical forms):
 - Gregory, Greg, Greggie, Greggy -> "Greg"
-- Jeffrey, Jeff -> "Geoff"  
-- Daniel, Dan, Danny -> "Danny"
+- Uncle Greg -> "Dad"
+- Geoffrey, Geoff, Jeffrey, Jeff, Tommy -> "Geoff"  
+- Karen, Kara, Karan -> "Karen"
+- Margaret, Margret, Peggy, Marge -> "Margaret"
+- Aunt Peggy, Aunt Margaret, Aunt Margret -> "Mom"
 - Daddy, Dad -> "Dad"
 - Mommy, Mom, Mama -> "Mom"
-- Grandma, Grandmother, Nana -> "Grandma"
-- Grandpa, Grandfather, Papa -> "Grandpa"
 
 RULES:
 1. IDENTITY PRESERVATION: Never strip a specific name from a title.
