@@ -12,7 +12,7 @@ export interface ModelConfig {
 }
 
 const DEFAULT_CONFIG: ModelConfig = {
-  generation: 'chat-qwen3.5-9b',
+  generation: 'chat-gemma4-e4b',
   embedding: 'embed-qwen3-0.6b',
   reranking: 'rerank-qwen3-0.6b',
 } as const;

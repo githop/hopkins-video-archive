@@ -49,7 +49,6 @@ port = 8006
 [models.ingest-qwen3-14b.defaults]
 gpu_memory_utilization = 0.9
 max_model_len = 8192               # Good context length for batches
-enable_reasoning = true
 reasoning_parser = "deepseek_r1" 
 max_num_seqs = 16                  # Higher concurrency than 32B model
 enforce_eager = true               # Avoid CUDA graph overhead for varying lengths
@@ -259,36 +258,67 @@ gpu_memory_utilization = 0.15
 max_model_len = 4096
 enforce_eager = true
 
-[models.chat-gemma4-e4b]
-repo = "google/gemma-4-E4B-it"
+[models.chat-gemma4-e2b]
+repo = "google/gemma-4-E2B-it"
 task = "generate"
 port = 8015
+image = "gnarlyvllm/gemma4-compat:latest"
+
+[models.chat-gemma4-e2b.defaults]
+gpu_memory_utilization = 0.9
+max_model_len = 8192
+enforce_eager = true
+reasoning_parser = "gemma4"
+
+[models.chat-gemma4-e4b]
+repo = "ciocan/gemma-4-E4B-it-W4A16"
+task = "generate"
+port = 8017
 image = "gnarlyvllm/gemma4-compat:latest"
 
 [models.chat-gemma4-e4b.defaults]
 gpu_memory_utilization = 0.9
 max_model_len = 8192
 enforce_eager = true
-language_model_only = true
 reasoning_parser = "gemma4"
+quantization = "gptq"
+default_chat_template_kwargs = '{"enable_thinking": true}'
+
+[stacks.rag-gemma4-e2b]
+description = "Gemma 4 E2B Summarizer with 0.6B Embedding and Reranker"
+models = ["chat-gemma4-e2b", "embed-qwen3-0.6b", "rerank-qwen3-0.6b"]
+
+[stacks.rag-gemma4-e2b.overrides.chat-gemma4-e2b]
+gpu_memory_utilization = 0.55
+max_model_len = 8192
+performance_mode = "interactivity"
+
+[stacks.rag-gemma4-e2b.overrides."embed-qwen3-0.6b"]
+gpu_memory_utilization = 0.1
+max_model_len = 4096
+enforce_eager = true
+
+[stacks.rag-gemma4-e2b.overrides."rerank-qwen3-0.6b"]
+gpu_memory_utilization = 0.15
+max_model_len = 4096
+enforce_eager = true
 
 [stacks.rag-gemma4-e4b]
 description = "Gemma 4 E4B Summarizer with 0.6B Embedding and Reranker"
 models = ["chat-gemma4-e4b", "embed-qwen3-0.6b", "rerank-qwen3-0.6b"]
 
 [stacks.rag-gemma4-e4b.overrides.chat-gemma4-e4b]
-gpu_memory_utilization = 0.75
+gpu_memory_utilization = 0.65
 max_model_len = 8192
-enforce_eager = true
 performance_mode = "interactivity"
 
 [stacks.rag-gemma4-e4b.overrides."embed-qwen3-0.6b"]
-gpu_memory_utilization = 0.12
+gpu_memory_utilization = 0.1
 max_model_len = 4096
 enforce_eager = true
 
 [stacks.rag-gemma4-e4b.overrides."rerank-qwen3-0.6b"]
-gpu_memory_utilization = 0.08
+gpu_memory_utilization = 0.15
 max_model_len = 4096
 enforce_eager = true
 
@@ -303,7 +333,7 @@ gpu_memory_utilization = 0.95
 max_model_len = 4096
 max_num_seqs = 4
 enforce_eager = true
+default_chat_template_kwargs = '{"enable_thinking": true}'
 reasoning_parser = "gemma4"
-enable_reasoning = true
 enable_prefix_caching = true
 quantization = "inc"

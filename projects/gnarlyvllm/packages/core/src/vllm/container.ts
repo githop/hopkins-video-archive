@@ -116,6 +116,11 @@ export function buildVllmContainerOptions(
     command.push('--tool-call-parser', model.tool_call_parser);
   }
 
+  // Reasoning parser (independent of tool calling)
+  if (model.reasoning_parser) {
+    command.push('--reasoning-parser', model.reasoning_parser);
+  }
+
   // HuggingFace specific config for GGUF/other formats
   if (model.tokenizer) {
     command.push('--tokenizer', model.tokenizer);

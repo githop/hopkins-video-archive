@@ -10,6 +10,7 @@ export const GENERATION_MODELS = {
     'chat-qwen3-8b',
     'chat-qwen3.5-9b',
     'ingest-glm4.7-flash',
+    'chat-gemma4-e2b',
     'chat-gemma4-e4b',
     'ingest-gemma4-31b',
   ] as const,
