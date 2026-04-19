@@ -1,6 +1,6 @@
 import { logger } from '@hop-hv-rag/core';
 import { parseArgs } from 'node:util';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   createDb,
   entities,
@@ -77,7 +77,19 @@ async function main() {
   let applied = 0;
 
   for (const [rawText, entry] of Object.entries(registry)) {
-    if (entry.category === 'DISCARD') continue;
+    if (entry.category === 'DISCARD') {
+      await db
+        .update(chunkEntityMentions)
+        .set({ entityType: sql`'DISCARDED_' || entity_type` })
+        .where(
+          and(
+            eq(chunkEntityMentions.rawText, rawText),
+            inArray(chunkEntityMentions.entityType, ['PERSON', 'ROLE']),
+          ),
+        );
+      applied++;
+      continue;
+    }
     const canonical = entry.canonical.trim();
     if (!canonical) continue;
 

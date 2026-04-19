@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { logger } from 'hono/logger';
 
 type RouteInfo = { port: number; task: string; repo: string };
 const rawRoutes = Bun.env.GNARLY_ROUTES;
@@ -11,6 +12,7 @@ if (!rawRoutes) {
 const routeMap: Record<string, RouteInfo> = JSON.parse(rawRoutes);
 const app = new Hono();
 
+app.use('*', logger());
 app.get('/health', (c) => c.text('OK'));
 
 app.get('/v1/models', (c) => {
