@@ -2,6 +2,16 @@
 litellm_port = 4000
 huggingface_cache = "~/.cache/huggingface"
 
+# Proxy server binding - '0.0.0.0' allows access from any network interface
+# Use '127.0.0.1' to restrict to localhost only (useful for single-machine setups)
+proxy_hostname = "0.0.0.0"
+
+# Proxy request logging - enables SQLite logging and web dashboard
+proxy_log_enabled = true
+proxy_log_db_path = "~/.local/share/gnarlyvllm/proxy-logs.db"
+proxy_log_capture_bodies = true
+proxy_log_skip_paths = ["/health", "/v1/models"]
+
 [models.chat-qwen3-4b]
 repo = "Qwen/Qwen3-4B-AWQ"
 task = "generate"

@@ -8,6 +8,18 @@ litellm_port = 4000
 # HuggingFace cache directory (models are downloaded here)
 huggingface_cache = "~/.cache/huggingface"
 
+# Proxy server binding - '0.0.0.0' allows network access from other machines
+# Use '127.0.0.1' to restrict to localhost only (more secure for single-machine use)
+# proxy_hostname = "0.0.0.0"
+
+# Proxy request logging (SQLite-based)
+# Enable to log all requests/responses to a local SQLite database
+# Access the dashboard at http://<vm-ip>:4000/admin when enabled
+# proxy_log_enabled = false
+# proxy_log_db_path = "~/.local/share/gnarlyvllm/proxy-logs.db"
+# proxy_log_capture_bodies = true  # Log full request/response bodies
+# proxy_log_skip_paths = ["/health", "/v1/models"]  # Don't log these paths
+
 # Model definitions
 # Each model has a unique name and configuration
 

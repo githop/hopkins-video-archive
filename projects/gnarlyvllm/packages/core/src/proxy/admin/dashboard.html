@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gnarly Proxy Logs</title>
+  <style>
+/* DASHBOARD_CSS */
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Gnarly Proxy Logs</h1>
+        <div class="subtitle">Request/Response Logging Dashboard</div>
+      </div>
+    </header>
+
+    <div class="stats-grid" id="stats">
+      <div class="stat-card">
+        <div class="stat-label">Total Requests</div>
+        <div class="stat-value" id="stat-total">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Duration</div>
+        <div class="stat-value" id="stat-avg">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Prompt Tokens</div>
+        <div class="stat-value" id="stat-prompt">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Completion Tokens</div>
+        <div class="stat-value" id="stat-completion">-</div>
+      </div>
+    </div>
+
+    <div class="filters">
+      <div class="filter-group">
+        <label>Model</label>
+        <select id="filter-model"><option value="">All Models</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Path</label>
+        <select id="filter-path"><option value="">All Paths</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Prompt Type</label>
+        <select id="filter-prompt-type"><option value="">All Types</option></select>
+      </div>
+      <div class="filter-group">
+        <label>From</label>
+        <input type="datetime-local" id="filter-start">
+      </div>
+      <div class="filter-group">
+        <label>To</label>
+        <input type="datetime-local" id="filter-end">
+      </div>
+      <button onclick="applyFilters()">Apply Filters</button>
+      <button class="secondary" onclick="resetFilters()">Reset</button>
+      <button class="secondary" onclick="loadData()">Refresh</button>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Model</th>
+            <th>Type</th>
+            <th>Path</th>
+            <th>Status</th>
+            <th>Duration</th>
+            <th>Tokens</th>
+          </tr>
+        </thead>
+        <tbody id="log-table">
+          <tr>
+            <td colspan="7" class="empty-state">
+              <div class="loading"></div>
+              <div style="margin-top: 12px;">Loading logs...</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="pagination" id="pagination"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal" onclick="closeModalOnOverlay(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-title">Request Details</div>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="view-toggle">
+        <button id="view-rendered" class="active" onclick="setViewMode('rendered')">Rendered</button>
+        <button id="view-raw" onclick="setViewMode('raw')">Raw JSON</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+      </div>
+    </div>
+  </div>
+
+  <script>
+/* DASHBOARD_JS */
+  </script>
+</body>
+</html>

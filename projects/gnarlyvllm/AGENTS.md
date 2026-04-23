@@ -35,7 +35,12 @@ gnarlyvllm/
 │   │       │   └── index.ts
 │   │       ├── proxy/            # Gnarly Proxy management
 │   │       │   ├── server.ts     # Hono-based proxy server script
+│   │       │   ├── logger.ts     # SQLite logging middleware
 │   │       │   ├── container.ts  # Container options builder
+│   │       │   ├── admin/        # Admin dashboard
+│   │       │   │   ├── router.ts # Hono routes for /admin
+│   │       │   │   ├── api.ts    # SQLite query helpers
+│   │       │   │   └── ui.ts     # Dashboard HTML
 │   │       │   └── index.ts
 │   │       └── index.ts          # Re-exports all modules
 │   │
@@ -48,6 +53,7 @@ gnarlyvllm/
 │               ├── stop.ts       # gnarlyvllm stop [name]
 │               ├── status.ts     # gnarlyvllm status
 │               ├── logs.ts       # gnarlyvllm logs <model>
+│               ├── proxy-logs.ts # gnarlyvllm proxy-logs clear
 │               └── config.ts     # gnarlyvllm config check/init
 │
 ├── gnarlyvllm.example.toml       # Example config file
@@ -146,6 +152,7 @@ gnarlyvllm start <stack>           # Start stack + Gnarly Proxy
 gnarlyvllm stop [model|stack]      # Stop specific or all
 gnarlyvllm status                  # Show running state
 gnarlyvllm logs <model>            # Tail logs
+gnarlyvllm proxy-logs clear        # Clear all proxy request logs
 gnarlyvllm config check            # Validate config
 gnarlyvllm config init             # Generate example config
 ```
@@ -190,3 +197,56 @@ models = ["qwen-7b-chat"]
 [stacks.my-stack.overrides.qwen-7b-chat]
 gpu_memory_utilization = 0.4  # Override when running in stack
 ```
+
+## Proxy Logging
+
+The Gnarly Proxy can log all requests and responses to a local SQLite database for debugging and observability. This is controlled by settings in your `gnarlyvllm.toml`:
+
+### Configuration
+
+```toml
+[settings]
+# Server binding - use '0.0.0.0' for network access, '127.0.0.1' for localhost only
+proxy_hostname = "0.0.0.0"
+
+# Logging settings
+proxy_log_enabled = true
+proxy_log_db_path = "~/.local/share/gnarlyvllm/proxy-logs.db"
+proxy_log_capture_bodies = true
+proxy_log_skip_paths = ["/health", "/v1/models"]
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `proxy_hostname` | `0.0.0.0` | Interface to bind to. Use `0.0.0.0` for network access, `127.0.0.1` for localhost only |
+| `proxy_log_enabled` | `false` | Master switch to enable/disable logging |
+| `proxy_log_db_path` | `~/.local/share/gnarlyvllm/proxy-logs.db` | SQLite database file path |
+| `proxy_log_capture_bodies` | `true` | Log full request/response bodies (can be large) |
+| `proxy_log_skip_paths` | `["/health", "/v1/models"]` | Paths to exclude from logging |
+
+### Dashboard
+
+When logging is enabled, a web dashboard is available at:
+```
+http://localhost:4000/admin
+```
+
+The dashboard provides:
+- Real-time stats (total requests, avg duration, token usage)
+- Filterable log table with pagination
+- Inline request/response body viewing
+- Support for streaming responses (captured via `ReadableStream.tee()`)
+
+### Clearing Logs
+
+To clear all logs from the database:
+```bash
+gnarlyvllm proxy-logs clear
+```
+
+### Implementation Notes
+
+- Uses `bun:sqlite` for zero-dependency SQLite access
+- WAL mode enabled for concurrent read/write between dashboard and request handler
+- Async fire-and-forget inserts to avoid blocking requests
+- Token usage extracted from vLLM responses automatically

@@ -95,6 +95,11 @@ export type StackConfig = z.infer<typeof StackConfigSchema>;
 export const SettingsSchema = z.object({
   litellm_port: z.number().int().min(1024).max(65535).default(4000),
   huggingface_cache: z.string().default('~/.cache/huggingface'),
+  proxy_hostname: z.string().default('0.0.0.0'), // '0.0.0.0' for network access, '127.0.0.1' for localhost only
+  proxy_log_enabled: z.boolean().default(false),
+  proxy_log_db_path: z.string().default('~/.local/share/gnarlyvllm/proxy-logs.db'),
+  proxy_log_capture_bodies: z.boolean().default(true),
+  proxy_log_skip_paths: z.array(z.string()).default(['/health', '/v1/models']),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 

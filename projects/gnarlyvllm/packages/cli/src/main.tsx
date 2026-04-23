@@ -15,6 +15,7 @@ Commands:
   dashboard           Open interactive dashboard
   list                List available models and stacks
   logs <model>        Tail logs for a model container
+  proxy-logs clear    Clear all proxy request logs
   config check        Validate configuration file
   config init         Create example configuration file
 
@@ -84,6 +85,10 @@ async function main(): Promise<number> {
     case 'logs': {
       const { logsCommand } = await import('./commands/logs.ts');
       return logsCommand(args, configPath);
+    }
+    case 'proxy-logs': {
+      const { proxyLogsCommand } = await import('./commands/proxy-logs.ts');
+      return proxyLogsCommand(args, configPath);
     }
     case 'config': {
       const { configCommand } = await import('./commands/config.ts');

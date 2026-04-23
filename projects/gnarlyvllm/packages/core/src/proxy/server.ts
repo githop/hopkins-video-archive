@@ -1,5 +1,8 @@
 import { Hono } from 'hono';
 import { logger } from 'hono/logger';
+import type { Database } from 'bun:sqlite';
+import { initDb, logProxyRequest, type LogContext } from './logger.ts';
+import { createAdminRouter } from './admin/router.ts';
 
 type RouteInfo = { port: number; task: string; repo: string };
 const rawRoutes = Bun.env.GNARLY_ROUTES;
@@ -10,6 +13,33 @@ if (!rawRoutes) {
 }
 
 const routeMap: Record<string, RouteInfo> = JSON.parse(rawRoutes);
+
+// Read logging configuration from environment
+const logEnabled = Bun.env.GNARLY_LOG_ENABLED === 'true';
+const logDbPath = Bun.env.GNARLY_LOG_DB_PATH;
+const logCaptureBodies = Bun.env.GNARLY_LOG_CAPTURE_BODIES !== 'false';
+const logSkipPaths = (Bun.env.GNARLY_LOG_SKIP_PATHS || '').split(',').filter(Boolean);
+
+// Initialize logging if enabled
+let db: Database | undefined;
+let logContext: LogContext | undefined;
+
+if (logEnabled && logDbPath) {
+  try {
+    db = await initDb(logDbPath);
+    logContext = {
+      db,
+      captureBodies: logCaptureBodies,
+      skipPaths: logSkipPaths,
+    };
+    console.log(`Proxy logging enabled: ${logDbPath}`);
+    console.log(`Capture bodies: ${logCaptureBodies}, Skip paths: ${logSkipPaths.join(', ') || 'none'}`);
+  } catch (e: any) {
+    console.error('Failed to initialize proxy logging:', e.message);
+    // Continue without logging
+  }
+}
+
 const app = new Hono();
 
 app.use('*', logger());
@@ -24,6 +54,12 @@ app.get('/v1/models', (c) => {
   }));
   return c.json({ data: models, object: 'list' });
 });
+
+// Mount admin router if logging is enabled
+if (db) {
+  const adminRouter = createAdminRouter(db);
+  app.route('/admin', adminRouter);
+}
 
 // Bridge Reranking: Cohere format -> vLLM /v1/score format
 app.post('/v1/rerank', async (c) => {
@@ -41,14 +77,59 @@ app.post('/v1/rerank', async (c) => {
       text_1: body.query,
       text_2: body.documents,
     };
-    const res = await fetch(
-      `http://host.containers.internal:${route.port}/v1/score`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(vllmBody),
-      },
-    );
+
+    const vllmBodyStr = JSON.stringify(vllmBody);
+    const targetUrl = `http://host.containers.internal:${route.port}/v1/score`;
+
+    // If logging is enabled, use the logging wrapper
+    if (logContext) {
+      return await logProxyRequest(
+        logContext,
+        {
+          method: 'POST',
+          url: c.req.url,
+          model: modelName,
+          requestBody: JSON.stringify(body),
+          upstreamFetch: async () => {
+            const res = await fetch(targetUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: vllmBodyStr,
+            });
+
+            if (!res.ok) {
+              const text = await res.text();
+              return new Response(text, { status: res.status, headers: res.headers });
+            }
+
+            // Transform the response
+            const data = (await res.json()) as any;
+            const results = data.data.map((item: any, index: number) => ({
+              index,
+              relevance_score: item.score,
+            }));
+
+            const transformedBody = JSON.stringify({
+              id: crypto.randomUUID(),
+              results,
+              meta: { api_version: { version: '1' } },
+            });
+
+            return new Response(transformedBody, {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          },
+        }
+      );
+    }
+
+    // Non-logging path (original behavior)
+    const res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: vllmBodyStr,
+    });
 
     if (!res.ok) return c.text(await res.text(), res.status as any);
 
@@ -74,6 +155,7 @@ app.all('/v1/*', async (c) => {
     let modelName: string | undefined;
     let proxyBody: ReadableStream | string | undefined = c.req.raw.body as any;
     const headers = new Headers(c.req.header());
+    let requestBodyStr: string | undefined;
 
     if (c.req.method === 'POST') {
       try {
@@ -83,7 +165,8 @@ app.all('/v1/*', async (c) => {
 
         if (modelName && routeMap[modelName]) {
           body.model = routeMap[modelName].repo;
-          proxyBody = JSON.stringify(body);
+          requestBodyStr = JSON.stringify(body);
+          proxyBody = requestBodyStr;
           headers.delete('content-length');
         }
       } catch {}
@@ -105,6 +188,21 @@ app.all('/v1/*', async (c) => {
       duplex: 'half',
     });
 
+    // If logging is enabled, use the logging wrapper
+    if (logContext) {
+      return await logProxyRequest(
+        logContext,
+        {
+          method: c.req.method,
+          url: c.req.url,
+          model: modelName,
+          requestBody: requestBodyStr,
+          upstreamFetch: () => fetch(proxyReq),
+        }
+      );
+    }
+
+    // Non-logging path (original behavior)
     const response = await fetch(proxyReq);
 
     const newHeaders = new Headers(response.headers);
@@ -119,8 +217,13 @@ app.all('/v1/*', async (c) => {
   }
 });
 
+// Server configuration - bind to all interfaces by default for network access
+// Can be overridden via GNARLY_HOSTNAME env var (e.g., '127.0.0.1' for localhost only)
+const hostname = Bun.env.GNARLY_HOSTNAME || '0.0.0.0';
+
 export default {
   port: 4000,
+  hostname,
   idleTimeout: 120, // Allow for long model warmup/inference
   fetch: app.fetch,
 };
