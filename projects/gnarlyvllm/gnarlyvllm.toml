@@ -262,7 +262,6 @@ enforce_eager = true
 repo = "google/gemma-4-E2B-it"
 task = "generate"
 port = 8015
-image = "docker.io/vllm/vllm-openai:gemma4"
 
 [models.chat-gemma4-e2b.defaults]
 gpu_memory_utilization = 0.9
@@ -274,7 +273,6 @@ reasoning_parser = "gemma4"
 repo = "ciocan/gemma-4-E4B-it-W4A16"
 task = "generate"
 port = 8017
-image = "docker.io/vllm/vllm-openai:gemma4"
 
 [models.chat-gemma4-e4b.defaults]
 gpu_memory_utilization = 0.9
@@ -326,7 +324,6 @@ enforce_eager = true
 repo = "Intel/gemma-4-31B-it-int4-AutoRound"
 task = "generate"
 port = 8016
-image = "docker.io/vllm/vllm-openai:gemma4"
 
 [models."ingest-gemma4-31b".defaults]
 gpu_memory_utilization = 0.95
