@@ -1,0 +1,185 @@
+proxy:
+  hostname: "0.0.0.0"
+  logging:
+    enabled: true
+    capture_bodies: true
+    skip_paths:
+      - /health
+      - /v1/models
+
+models:
+  chat-qwen3-4b:
+    repo: Qwen/Qwen3-4B-AWQ
+    task: generate
+    port: 8001
+    max_model_len: 32768
+    gpu_memory_utilization: 0.9
+
+  embed-qwen3-4b:
+    repo: Qwen/Qwen3-Embedding-4B
+    task: embed
+    port: 8002
+    max_model_len: 32768
+    gpu_memory_utilization: 0.9
+
+  embed-qwen3-0.6b:
+    repo: Qwen/Qwen3-Embedding-0.6B
+    task: embed
+    port: 8005
+    max_model_len: 32768
+    gpu_memory_utilization: 0.9
+
+  ingest-qwen3-4b:
+    repo: Qwen/Qwen3-4B-AWQ
+    task: generate
+    port: 8003
+    gpu_memory_utilization: 0.95
+    max_model_len: 8192
+    max_num_seqs: 32
+    reasoning_parser: qwen3
+
+  ingest-qwen3-14b:
+    repo: Qwen/Qwen3-14B-AWQ
+    task: generate
+    port: 8006
+    gpu_memory_utilization: 0.9
+    max_model_len: 8192
+    reasoning_parser: deepseek_r1
+    max_num_seqs: 16
+    enforce_eager: true
+
+  rerank-qwen3-4b:
+    repo: Qwen/Qwen3-Reranker-4B
+    task: score
+    port: 8004
+    gpu_memory_utilization: 0.9
+    max_model_len: 4096
+    hf_overrides: '{"architectures": ["Qwen3ForSequenceClassification"], "classifier_from_token": ["no", "yes"], "is_original_qwen3_reranker": true}'
+
+  chat-qwen3-8b:
+    repo: Qwen/Qwen3-8B-AWQ
+    task: generate
+    port: 8009
+    gpu_memory_utilization: 0.9
+    max_model_len: 8192
+    reasoning_parser: deepseek_r1
+
+  chat-qwen3.5-9b:
+    repo: QuantTrio/Qwen3.5-9B-AWQ
+    task: generate
+    port: 8012
+    gpu_memory_utilization: 0.9
+    max_model_len: 8192
+    reasoning_parser: qwen3
+    language_model_only: true
+    speculative_config: '{"method": "mtp", "num_speculative_tokens": 1}'
+    override_generation_config:
+      temperature: 0.6
+      top_p: 0.95
+      top_k: 20
+      min_p: 0.0
+      presence_penalty: 0.0
+      repetition_penalty: 1.0
+
+  ingest-qwen3.5-9b:
+    repo: QuantTrio/Qwen3.5-9B-AWQ
+    task: generate
+    port: 8014
+    gpu_memory_utilization: 0.9
+    max_model_len: 16384
+    max_num_seqs: 12
+    reasoning_parser: qwen3
+    language_model_only: true
+    enable_prefix_caching: true
+    override_generation_config:
+      temperature: 0.6
+      top_p: 0.95
+      top_k: 20
+      min_p: 0.0
+      presence_penalty: 0.0
+      repetition_penalty: 1.0
+
+  rerank-qwen3-0.6b:
+    repo: Qwen/Qwen3-Reranker-0.6B
+    task: score
+    port: 8007
+    gpu_memory_utilization: 0.15
+    max_model_len: 4096
+    hf_overrides: '{"architectures": ["Qwen3ForSequenceClassification"], "classifier_from_token": ["no", "yes"], "is_original_qwen3_reranker": true}'
+
+  ingest-glm4.7-flash:
+    repo: cyankiwi/GLM-4.7-Flash-AWQ-4bit
+    task: generate
+    port: 8008
+    image: localhost/gnarlyvllm/glm-compat:latest
+    gpu_memory_utilization: 0.9
+    max_model_len: 8192
+    max_num_seqs: 16
+    enforce_eager: true
+
+  ingest-qwen3-30b:
+    repo: QuantTrio/Qwen3-30B-A3B-Thinking-2507-AWQ
+    task: generate
+    port: 8010
+    gpu_memory_utilization: 0.9
+    max_model_len: 16384
+    max_num_seqs: 6
+    enable_expert_parallel: true
+    reasoning_parser: deepseek_r1
+
+  ingest-qwen3.5-27b:
+    repo: Qwen/Qwen3.5-27B-GPTQ-Int4
+    task: generate
+    port: 8011
+    gpu_memory_utilization: 0.85
+    max_model_len: 4096
+    quantization: gptq_marlin
+    enforce_eager: true
+    reasoning_parser: qwen3
+    max_num_seqs: 4
+
+  chat-qwen3.5-4b:
+    repo: QuantTrio/Qwen3.5-4B-AWQ
+    task: generate
+    port: 8013
+    gpu_memory_utilization: 0.9
+    max_model_len: 8192
+    enforce_eager: true
+    language_model_only: true
+    reasoning_parser: qwen3
+    default_chat_template_kwargs: '{"enable_thinking": false}'
+    speculative_config: '{"method": "mtp", "num_speculative_tokens": 2}'
+
+  chat-gemma4-e2b:
+    repo: google/gemma-4-E2B-it
+    task: generate
+    port: 8015
+    gpu_memory_utilization: 0.9
+    max_model_len: 8192
+    enforce_eager: true
+    reasoning_parser: gemma4
+
+  chat-gemma4-e4b:
+    repo: ciocan/gemma-4-E4B-it-W4A16
+    task: generate
+    port: 8017
+    gpu_memory_utilization: 0.9
+    max_model_len: 8192
+    enforce_eager: true
+    reasoning_parser: gemma4
+    quantization: gptq
+    default_chat_template_kwargs: '{"enable_thinking": true}'
+
+  ingest-gemma4-31b:
+    repo: Intel/gemma-4-31B-it-int4-AutoRound
+    task: generate
+    port: 8016
+    gpu_memory_utilization: 0.95
+    max_model_len: 8192
+    max_num_seqs: 4
+    enforce_eager: true
+    default_chat_template_kwargs: '{"enable_thinking": true}'
+    reasoning_parser: gemma4
+    tool_call_parser: gemma4
+    enable_prefix_caching: true
+    quantization: inc

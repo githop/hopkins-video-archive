@@ -2,33 +2,20 @@
 import { parseArgs } from 'node:util';
 
 const HELP = `
-gnarlyvllm - vLLM container orchestration with Gnarly Proxy
+gnarlyvllm - vLLM inference with Gnarly Proxy
 
 Usage:
   gnarlyvllm <command> [options]
 
 Commands:
-  serve <model>       Start a single model + Gnarly Proxy
-  start <stack>       Start all models in a stack + Gnarly Proxy
-  stop [name]         Stop model, stack, or all running containers
-  status              Show running models and resource usage
-  dashboard           Open interactive dashboard
-  list                List available models and stacks
-  logs <model>        Tail logs for a model container
   proxy-logs clear    Clear all proxy request logs
-  config check        Validate configuration file
-  config init         Create example configuration file
 
 Options:
   -h, --help          Show this help message
   -v, --version       Show version
-  -c, --config        Path to config file (default: ./gnarlyvllm.toml)
 
 Examples:
-  gnarlyvllm serve chat-qwen-7b
-  gnarlyvllm start rag-qwen-7b
-  gnarlyvllm stop
-  gnarlyvllm status
+  gnarlyvllm proxy-logs clear
 `;
 
 const VERSION = '0.1.0';
@@ -39,7 +26,6 @@ async function main(): Promise<number> {
     options: {
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },
-      config: { type: 'string', short: 'c' },
     },
     allowPositionals: true,
   });
@@ -55,44 +41,11 @@ async function main(): Promise<number> {
   }
 
   const [command, ...args] = positionals;
-  const configPath = values.config;
 
   switch (command) {
-    case 'serve': {
-      const { serveCommand } = await import('./commands/serve.ts');
-      return serveCommand(args, configPath);
-    }
-    case 'start': {
-      const { startCommand } = await import('./commands/start.ts');
-      return startCommand(args, configPath);
-    }
-    case 'stop': {
-      const { stopCommand } = await import('./commands/stop.ts');
-      return stopCommand(args, configPath);
-    }
-    case 'status': {
-      const { statusCommand } = await import('./commands/status.ts');
-      return statusCommand(args, configPath);
-    }
-    case 'dashboard': {
-      const { dashboardCommand } = await import('./commands/dashboard.tsx');
-      return dashboardCommand(args, configPath);
-    }
-    case 'list': {
-      const { listCommand } = await import('./commands/list.ts');
-      return listCommand(args, configPath);
-    }
-    case 'logs': {
-      const { logsCommand } = await import('./commands/logs.ts');
-      return logsCommand(args, configPath);
-    }
     case 'proxy-logs': {
       const { proxyLogsCommand } = await import('./commands/proxy-logs.ts');
-      return proxyLogsCommand(args, configPath);
-    }
-    case 'config': {
-      const { configCommand } = await import('./commands/config.ts');
-      return configCommand(args, configPath);
+      return proxyLogsCommand(args);
     }
     default:
       console.error(`Unknown command: ${command}`);

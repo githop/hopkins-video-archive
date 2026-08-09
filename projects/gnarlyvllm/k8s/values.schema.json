@@ -1,0 +1,145 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "proxy": {
+      "type": "object",
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "default": "0.0.0.0"
+        },
+        "logging": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "capture_bodies": {
+              "type": "boolean",
+              "default": true
+            },
+            "skip_paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": ["/health", "/v1/models"]
+            }
+          }
+        }
+      }
+    },
+    "models": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9._-]+$": {
+          "type": "object",
+          "required": ["repo", "task", "port"],
+          "properties": {
+            "repo": {
+              "type": "string"
+            },
+            "task": {
+              "type": "string",
+              "enum": ["generate", "embed", "score"]
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 65535
+            },
+            "image": {
+              "type": "string"
+            },
+            "gpu_memory_utilization": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "max_model_len": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "quantization": {
+              "type": "string",
+              "enum": ["awq", "awq_marlin", "gptq", "gptq_marlin", "fp8", "bitsandbytes", "gguf", "compressed-tensors", "autoround", "inc"]
+            },
+            "performance_mode": {
+              "type": "string",
+              "enum": ["balanced", "interactivity", "throughput"]
+            },
+            "kv_cache_dtype": {
+              "type": "string",
+              "enum": ["auto", "fp16", "bf16", "fp8", "fp8_e4m3", "fp8_e5m2"]
+            },
+            "enforce_eager": {
+              "type": "boolean"
+            },
+            "enable_tool_calling": {
+              "type": "boolean"
+            },
+            "tool_call_parser": {
+              "type": "string"
+            },
+            "reasoning_parser": {
+              "type": "string"
+            },
+            "enable_expert_parallel": {
+              "type": "boolean"
+            },
+            "swap_space": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_seq_len_to_capture": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_num_seqs": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_num_batched_tokens": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "num_scheduler_steps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "tensor_parallel_size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "speculative_config": {
+              "type": "string"
+            },
+            "language_model_only": {
+              "type": "boolean"
+            },
+            "default_chat_template_kwargs": {
+              "type": "string"
+            },
+            "chat_template": {
+              "type": "string"
+            },
+            "enable_prefix_caching": {
+              "type": "boolean"
+            },
+            "hf_overrides": {
+              "type": "string"
+            },
+            "generation_config": {
+              "type": "string"
+            },
+            "override_generation_config": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    }
+  }
+}

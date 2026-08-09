@@ -1,8 +1,8 @@
 import { Database } from 'bun:sqlite';
-import { homedir } from 'node:os';
-import { loadConfig } from '@gnarlyvllm/core';
 
-export async function proxyLogsCommand(args: string[], configPath?: string): Promise<number> {
+const DB_PATH = '/var/lib/gnarlyvllm/proxy-logs/proxy-logs.db';
+
+export async function proxyLogsCommand(args: string[]): Promise<number> {
   const [subcommand] = args;
 
   if (subcommand !== 'clear') {
@@ -14,23 +14,12 @@ export async function proxyLogsCommand(args: string[], configPath?: string): Pro
   }
 
   try {
-    const config = await loadConfig(configPath);
-
-    if (!config.settings.proxy_log_enabled) {
-      console.log('Proxy logging is disabled in config.');
-      console.log('Enable it with proxy_log_enabled = true in your gnarlyvllm.toml');
+    if (!(await Bun.file(DB_PATH).exists())) {
+      console.log('No proxy log database found at:', DB_PATH);
       return 0;
     }
 
-    const dbPathRaw = config.settings.proxy_log_db_path;
-    const dbPath = dbPathRaw.replace(/^~/, homedir());
-
-    if (!(await Bun.file(dbPath).exists())) {
-      console.log('No proxy log database found at:', dbPath);
-      return 0;
-    }
-
-    const db = new Database(dbPath);
+    const db = new Database(DB_PATH);
     const result = db.run('DELETE FROM proxy_logs');
     db.close();
 

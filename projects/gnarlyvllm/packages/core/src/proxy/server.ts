@@ -4,7 +4,7 @@ import type { Database } from 'bun:sqlite';
 import { initDb, logProxyRequest, type LogContext } from './logger.ts';
 import { createAdminRouter } from './admin/router.ts';
 
-type RouteInfo = { port: number; task: string; repo: string };
+type RouteInfo = { port: number; task: string; repo: string; host?: string };
 const rawRoutes = Bun.env.GNARLY_ROUTES;
 
 if (!rawRoutes) {
@@ -79,7 +79,8 @@ app.post('/v1/rerank', async (c) => {
     };
 
     const vllmBodyStr = JSON.stringify(vllmBody);
-    const targetUrl = `http://host.containers.internal:${route.port}/v1/score`;
+    const targetHost = route.host || 'host.containers.internal';
+    const targetUrl = `http://${targetHost}:${route.port}/v1/score`;
 
     // If logging is enabled, use the logging wrapper
     if (logContext) {
@@ -178,7 +179,8 @@ app.all('/v1/*', async (c) => {
     if (!route) return c.json({ error: `Model '${modelName}' not found` }, 404);
 
     const path = new URL(c.req.url).pathname;
-    const targetUrl = `http://host.containers.internal:${route.port}${path}`;
+    const targetHost = route.host || 'host.containers.internal';
+    const targetUrl = `http://${targetHost}:${route.port}${path}`;
 
     const proxyReq = new Request(targetUrl, {
       method: c.req.method,

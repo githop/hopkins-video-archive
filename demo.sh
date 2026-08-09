@@ -9,6 +9,7 @@ set -e
 # 4. Cloudflare Tunnel
 
 PROJECT_ROOT="/home/githop/hopkins-video-archive"
+GNARLY_ROOT="$PROJECT_ROOT/projects/gnarlyvllm"
 DOTENV="$PROJECT_ROOT/.env"
 
 # --- Default Configuration ---
@@ -34,8 +35,12 @@ echo "🚀 Initializing Complete Archive Stack..."
 
 # 2. Start Inference Stack
 echo "🧠 Waking up the Brain (gnarlyvllm)..."
-cd "$PROJECT_ROOT/projects/gnarlyvllm"
-bun packages/cli/src/main.tsx start "rag-gemma4-e4b"
+cd "$GNARLY_ROOT"
+kubectl create namespace gnarlyvllm 2>/dev/null || true
+helm upgrade --install gnarlyvllm ./k8s -f k8s/values-rag-gemma4-e4b.yaml --namespace gnarlyvllm
+
+echo "⏳ Waiting for inference models to be ready..."
+kubectl wait --for=condition=Ready pods -n gnarlyvllm -l "app!=gnarly-proxy" --timeout=600s
 
 # 3. Build UI
 echo "📦 Building Frontend..."
@@ -82,5 +87,9 @@ kill $SERVER_PID
 
 # Stop the tunnel container
 podman stop cf-archive-demo
+
+# Shutdown inference stack
+cd "$GNARLY_ROOT"
+helm uninstall gnarlyvllm --namespace gnarlyvllm
 
 echo "✨ Demo offline. See you next time!"

@@ -1,0 +1,35 @@
+proxy:
+  hostname: "0.0.0.0"
+  logging:
+    enabled: true
+    capture_bodies: true
+    skip_paths:
+      - /health
+      - /v1/models
+
+models:
+  chat-qwen3-8b:
+    repo: Qwen/Qwen3-8B-AWQ
+    task: generate
+    port: 8009
+    gpu_memory_utilization: 0.55
+    max_model_len: 8192
+    reasoning_parser: deepseek_r1
+    enforce_eager: true
+
+  embed-qwen3-0.6b:
+    repo: Qwen/Qwen3-Embedding-0.6B
+    task: embed
+    port: 8005
+    gpu_memory_utilization: 0.1
+    max_model_len: 4096
+    enforce_eager: true
+
+  rerank-qwen3-0.6b:
+    repo: Qwen/Qwen3-Reranker-0.6B
+    task: score
+    port: 8007
+    gpu_memory_utilization: 0.15
+    max_model_len: 4096
+    enforce_eager: true
+    hf_overrides: '{"architectures": ["Qwen3ForSequenceClassification"], "classifier_from_token": ["no", "yes"], "is_original_qwen3_reranker": true}'

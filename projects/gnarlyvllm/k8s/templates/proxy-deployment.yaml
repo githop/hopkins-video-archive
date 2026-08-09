@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gnarly-proxy
+  labels:
+    app: gnarly-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gnarly-proxy
+  template:
+    metadata:
+      labels:
+        app: gnarly-proxy
+    spec:
+      containers:
+      - name: proxy
+        image: docker.io/oven/bun:alpine
+        imagePullPolicy: IfNotPresent
+        command: ["bun", "run", "/app/proxy.js"]
+        env:
+        - name: GNARLY_ROUTES
+          value: {{ include "gnarlyvllm.proxyRoutes" . | quote }}
+        - name: GNARLY_HOSTNAME
+          value: {{ .Values.proxy.hostname | default "0.0.0.0" }}
+        - name: GNARLY_LOG_ENABLED
+          value: {{ .Values.proxy.logging.enabled | quote }}
+        - name: GNARLY_LOG_DB_PATH
+          value: "/data/gnarly/proxy-logs.db"
+        - name: GNARLY_LOG_CAPTURE_BODIES
+          value: {{ .Values.proxy.logging.capture_bodies | quote }}
+        - name: GNARLY_LOG_SKIP_PATHS
+          value: {{ join "," .Values.proxy.logging.skip_paths }}
+        ports:
+        - containerPort: 4000
+        volumeMounts:
+        - name: proxy-script
+          mountPath: /app/proxy.js
+          subPath: proxy.js
+        - name: proxy-admin
+          mountPath: /app/admin
+        - name: proxy-logs
+          mountPath: /data/gnarly
+      volumes:
+      - name: proxy-script
+        configMap:
+          name: proxy-script
+      - name: proxy-admin
+        configMap:
+          name: proxy-admin-assets
+      - name: proxy-logs
+        persistentVolumeClaim:
+          claimName: proxy-logs

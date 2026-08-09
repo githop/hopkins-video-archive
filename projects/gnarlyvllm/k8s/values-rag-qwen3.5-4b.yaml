@@ -1,0 +1,40 @@
+proxy:
+  hostname: "0.0.0.0"
+  logging:
+    enabled: true
+    capture_bodies: true
+    skip_paths:
+      - /health
+      - /v1/models
+
+models:
+  chat-qwen3.5-4b:
+    repo: QuantTrio/Qwen3.5-4B-AWQ
+    task: generate
+    port: 8013
+    gpu_memory_utilization: 0.68
+    max_model_len: 8192
+    enforce_eager: true
+    language_model_only: true
+    reasoning_parser: qwen3
+    performance_mode: interactivity
+    kv_cache_dtype: fp8
+    default_chat_template_kwargs: '{"enable_thinking": false}'
+    speculative_config: '{"method": "mtp", "num_speculative_tokens": 2}'
+
+  embed-qwen3-0.6b:
+    repo: Qwen/Qwen3-Embedding-0.6B
+    task: embed
+    port: 8005
+    gpu_memory_utilization: 0.1
+    max_model_len: 4096
+    enforce_eager: true
+
+  rerank-qwen3-0.6b:
+    repo: Qwen/Qwen3-Reranker-0.6B
+    task: score
+    port: 8007
+    gpu_memory_utilization: 0.15
+    max_model_len: 4096
+    enforce_eager: true
+    hf_overrides: '{"architectures": ["Qwen3ForSequenceClassification"], "classifier_from_token": ["no", "yes"], "is_original_qwen3_reranker": true}'

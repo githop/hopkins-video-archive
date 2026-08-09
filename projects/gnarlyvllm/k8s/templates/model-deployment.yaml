@@ -1,0 +1,71 @@
+{{- range $name, $model := .Values.models }}
+{{- $resName := printf "vllm-%s" (include "gnarlyvllm.resourceName" $name) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $resName }}
+  labels:
+    app: {{ $resName }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ $resName }}
+  template:
+    metadata:
+      labels:
+        app: {{ $resName }}
+    spec:
+      runtimeClassName: nvidia
+      containers:
+      - name: vllm
+        image: {{ $model.image | default "docker.io/vllm/vllm-openai:v0.19.1" }}
+        imagePullPolicy: IfNotPresent
+        args:
+          {{- include "gnarlyvllm.modelArgs" $model | nindent 10 }}
+        env:
+        - name: VLLM_USE_V1
+          value: "0"
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "all"
+        - name: HF_HUB_OFFLINE
+          value: "1"
+        ports:
+        - containerPort: {{ $model.port }}
+        volumeMounts:
+        - name: hf-cache
+          mountPath: /root/.cache/huggingface
+        {{- if $model.chat_template }}
+        - name: chat-template
+          mountPath: /app/custom_chat_template.jinja
+          subPath: {{ $model.chat_template }}
+        {{- end }}
+        startupProbe:
+          httpGet:
+            path: /health
+            port: {{ $model.port }}
+          periodSeconds: 10
+          failureThreshold: 90
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ $model.port }}
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ $model.port }}
+          periodSeconds: 30
+      volumes:
+      - name: hf-cache
+        persistentVolumeClaim:
+          claimName: hf-cache
+      {{- if $model.chat_template }}
+      - name: chat-template
+        configMap:
+          name: chat-template-{{ include "gnarlyvllm.resourceName" $name }}
+      {{- end }}
+---
+{{- end -}}

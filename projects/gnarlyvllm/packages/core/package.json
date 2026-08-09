@@ -8,7 +8,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target bun",
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun && bun run build:proxy",
+    "build:proxy": "bun build ./src/proxy/server.ts --target bun --outfile ./dist/proxy.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

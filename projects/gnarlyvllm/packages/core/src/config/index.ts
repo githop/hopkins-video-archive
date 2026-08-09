@@ -1,4 +1,3 @@
-// Config module - TOML loading and validation
+// Config module - Zod schemas
 
 export * from './schema.ts';
-export * from './loader.ts';

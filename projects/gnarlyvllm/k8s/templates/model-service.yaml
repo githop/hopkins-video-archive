@@ -1,0 +1,16 @@
+{{- range $name, $model := .Values.models }}
+{{- $resName := printf "vllm-%s" (include "gnarlyvllm.resourceName" $name) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $resName }}
+spec:
+  selector:
+    app: {{ $resName }}
+  ports:
+  - port: {{ $model.port }}
+    targetPort: {{ $model.port }}
+    name: http
+  clusterIP: None
+---
+{{- end -}}
