@@ -14,7 +14,15 @@ import type { HybridResult, ArchivistConfig } from './types.ts';
 import type { Db } from './db-types.ts';
 import { type Source, type StreamChunk } from './schemas.ts';
 import { EntityIndex } from './entity-index.ts';
-import { FilenameIndex, type FilenameMatch } from './filename-index.ts';
+import { FilenameIndex } from './filename-index.ts';
+import {
+  constructFtsOrFallbackQuery,
+  constructFtsQuery,
+  extractKeyTerms,
+  extractTranscriptSnippet,
+  formatRerankDocument,
+  fuseRrf,
+} from './search-utils.ts';
 
 /**
  * FamilyArchivist: Handles hybrid search and RAG synthesis with unified streaming API.
@@ -34,6 +42,7 @@ export class FamilyArchivist {
       temporalPenalty: 0.5,
       filenameBoost: 5.0,
       rrfK: 60,
+      ftsOrFallbackMinResults: 5,
       ...config,
     };
   }
@@ -233,14 +242,6 @@ export class FamilyArchivist {
     return context + chunkContext;
   }
 
-  private extractTranscriptSnippet(text: string): string {
-    const normalized = text.replace(/\s+/g, ' ').trim();
-    if (normalized.length <= 360) return normalized;
-    const head = normalized.slice(0, 240).trim();
-    const tail = normalized.slice(-90).trim();
-    return `${head} ... ${tail}`;
-  }
-
   /**
    * System prompt for the archivist generation.
    */
@@ -311,28 +312,6 @@ ${context}`;
   }
 
   /**
-   * Extract key terms from query for keyword boosting.
-   * Identifies quoted phrases and capitalized multi-word sequences (proper nouns).
-   */
-  private extractKeyTerms(query: string): string[] {
-    const terms: string[] = [];
-
-    // Match quoted phrases like "KH Talk"
-    const quoted = query.match(/"([^"]+)"/g);
-    if (quoted) {
-      terms.push(...quoted.map((q) => q.replace(/"/g, '')));
-    }
-
-    // Match capitalized sequences (potential proper nouns) like "KH Talk"
-    const caps = query.match(/[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)*/g);
-    if (caps) {
-      terms.push(...caps.filter((c) => c.length > 2));
-    }
-
-    return [...new Set(terms)];
-  }
-
-  /**
    * Check if content contains any of the key terms (case-insensitive).
    */
   private contentContainsKeyTerms(
@@ -344,45 +323,39 @@ ${context}`;
   }
 
   /**
-   * Construct a robust FTS5 query from user input.
-   * - Detects filename-like patterns (e.g. 1996-97-1.m4v) and treats them as exact phrases
-   * - Preserves prefix operators (*) for partial matching
-   * - Preserves quoted phrases for exact matching
-   * - BM25 scoring naturally down-weights common terms, so no stopword filtering needed
+   * Run an FTS5 MATCH query with production projection/ordering/limits.
    */
-  private constructFtsQuery(
-    query: string,
-    filenameMatches: FilenameMatch[] = [],
-  ): string {
-    const yearFilenameMatch = query.match(/\b\d{4}-[\w-.]+\b/g);
-    let processedQuery = query;
-
-    if (yearFilenameMatch) {
-      yearFilenameMatch.forEach((filename) => {
-        // Create a phrase version: "1996 97 1 m4v"
-        const phrase = `"${filename.replace(/[^\w]/g, ' ')}"`;
-        processedQuery = processedQuery.replace(filename, phrase);
-      });
-    }
-
-    const filenameClauses = filenameMatches.map((match) => {
-      // Use basename for FTS to match video_filename field
-      return `video_filename:"${match.basename}"`;
-    });
-
-    // Clean up special chars that FTS5 dislikes, but preserve:
-    // - alphanumeric characters
-    // - spaces
-    // - quotes (for phrase queries)
-    // - asterisk (for prefix queries like "swim*")
-    let cleanedQuery = processedQuery.replace(/[^\w\s"*]/g, ' ').trim();
-
-    // Combine with filename clauses
-    if (filenameClauses.length > 0) {
-      cleanedQuery = `${cleanedQuery} OR ${filenameClauses.join(' OR ')}`;
-    }
-
-    return cleanedQuery;
+  private runFts(ftsQuery: string): HybridResult[] {
+    return this.db.all<HybridResult>(
+      sql.raw(`
+      SELECT
+        c.id,
+        c.video_id as videoId,
+        c.start_time as startTime,
+        c.end_time as endTime,
+        c.text as text,
+        cs.title as title,
+        cs.summary as summary,
+        v.title as videoTitle,
+        v.year as videoYear,
+        v.year_start as videoYearStart,
+        v.year_end as videoYearEnd,
+        v.filename as videoFilename
+      FROM fts_chunks f
+      JOIN chunks c ON c.id = f.rowid
+      LEFT JOIN chunk_summaries cs ON cs.id = (
+        SELECT cs2.id
+        FROM chunk_summaries cs2
+        WHERE cs2.chunk_id = c.id AND cs2.summary_type = 'scene'
+        ORDER BY cs2.id DESC
+        LIMIT 1
+      )
+      JOIN videos v ON v.id = c.video_id
+      WHERE fts_chunks MATCH '${ftsQuery.replace(/'/g, "''")}'
+      ORDER BY bm25(fts_chunks)
+      LIMIT 40
+    `),
+    );
   }
 
   private async hybridSearch(
@@ -444,37 +417,27 @@ ${context}`;
     const vectorResults = this.db.all<HybridResult>(sql.raw(vectorSql));
 
     // 3. FTS5 Keyword Search with filename clauses
-    const ftsQuery = this.constructFtsQuery(query, filenameMatches);
-    const ftsResults = this.db.all<HybridResult>(
-      sql.raw(`
-      SELECT
-        c.id,
-        c.video_id as videoId,
-        c.start_time as startTime,
-        c.end_time as endTime,
-        c.text as text,
-        cs.title as title,
-        cs.summary as summary,
-        v.title as videoTitle,
-        v.year as videoYear,
-        v.year_start as videoYearStart,
-        v.year_end as videoYearEnd,
-        v.filename as videoFilename
-      FROM fts_chunks f
-      JOIN chunks c ON c.id = f.rowid
-      LEFT JOIN chunk_summaries cs ON cs.id = (
-        SELECT cs2.id
-        FROM chunk_summaries cs2
-        WHERE cs2.chunk_id = c.id AND cs2.summary_type = 'scene'
-        ORDER BY cs2.id DESC
-        LIMIT 1
-      )
-      JOIN videos v ON v.id = c.video_id
-      WHERE fts_chunks MATCH '${ftsQuery.replace(/'/g, "''")}'
-      ORDER BY bm25(fts_chunks)
-      LIMIT 40
-    `),
-    );
+    // Implicit-AND first; when it returns too few rows (conversational
+    // queries produce ZERO AND matches), rebuild as OR of non-stopword
+    // tokens so hybrid search keeps a real keyword contribution.
+    const ftsQuery = constructFtsQuery(query, filenameMatches);
+    let ftsResults = this.runFts(ftsQuery);
+
+    const fallbackThreshold = this.config.ftsOrFallbackMinResults!;
+    if (
+      fallbackThreshold > 0 &&
+      ftsResults.length < fallbackThreshold &&
+      filenameMatches.length + query.trim().length > 0
+    ) {
+      const orQuery = constructFtsOrFallbackQuery(query, filenameMatches);
+      if (orQuery.length > 0) {
+        logger.info(
+          { andMatchCount: ftsResults.length },
+          'FTS AND-match below threshold; applying OR fallback',
+        );
+        ftsResults = this.runFts(orQuery);
+      }
+    }
 
     const fused = this.fuse(vectorResults, ftsResults);
 
@@ -483,10 +446,13 @@ ${context}`;
     const { ranking } = await rerank({
       model: this.rerankModel,
       query,
-      documents: fused.map((r) => {
-        const snippet = this.extractTranscriptSnippet(r.text);
-        return `CHUNK: ${r.title || 'Untitled'}\nSUMMARY: ${r.summary || ''}\nTRANSCRIPT: ${snippet}`;
-      }),
+      documents: fused.map((r) =>
+        formatRerankDocument({
+          title: r.title,
+          summary: r.summary,
+          transcriptSnippet: extractTranscriptSnippet(r.text),
+        }),
+      ),
     });
 
     // Apply reranked scores
@@ -495,7 +461,7 @@ ${context}`;
     });
 
     // 5. Post-rerank boosting (non-compounding)
-    const keyTerms = this.extractKeyTerms(query);
+    const keyTerms = extractKeyTerms(query);
     const queryYear = this.detectYearInQuery(query);
     const targetVideoIdSet = new Set(targetVideoIds);
 
@@ -589,20 +555,11 @@ ${context}`;
     ftsResults: HybridResult[],
   ): HybridResult[] {
     const k = this.config.rrfK!;
-    const scores = new Map<number, number>();
-    const resultMap = new Map<number, HybridResult>();
-
-    [vectorResults, ftsResults].forEach((list) => {
-      list.forEach((item, index) => {
-        const currentScore = scores.get(item.id) || 0;
-        scores.set(item.id, currentScore + 1 / (k + index + 1));
-        resultMap.set(item.id, item);
-      });
-    });
-
-    return Array.from(scores.entries())
-      .sort((a, b) => b[1] - a[1])
+    return fuseRrf([vectorResults, ftsResults], k)
       .slice(0, 10) // Take top 10 for potential re-ranking
-      .map(([id, score]) => ({ ...resultMap.get(id)!, score }));
+      .map(({ item, score }) => ({
+        ...item,
+        score,
+      }));
   }
 }

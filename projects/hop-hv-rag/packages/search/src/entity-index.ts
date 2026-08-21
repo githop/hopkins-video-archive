@@ -8,8 +8,36 @@ export interface EntityMatch {
   subtype: string | null;
 }
 
+interface TermEntry {
+  term: string;
+  entityId: number;
+  /** Precompiled whole-token pattern for this term. */
+  pattern: RegExp;
+}
+
+const WORD_CHAR = /[A-Za-z0-9_]/;
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Build a case-insensitive whole-token pattern for a term. Anchors use \b
+ * only where the adjacent character is a word character, so terms that
+ * themselves start/end with punctuation (e.g. nicknames like "'60s") still
+ * behave sensibly.
+ */
+function wholeTokenPattern(term: string): RegExp {
+  const escaped = escapeRegExp(term.toLowerCase());
+  const first = escaped.charAt(0);
+  const last = escaped.charAt(escaped.length - 1);
+  const head = first && WORD_CHAR.test(first) ? '\\b' : '';
+  const tail = last && WORD_CHAR.test(last) ? '\\b' : '';
+  return new RegExp(`${head}${escaped}${tail}`);
+}
+
 export class EntityIndex {
-  private terms: Array<{ term: string; entityId: number }> = [];
+  private terms: TermEntry[] = [];
   private entityById = new Map<number, EntityMatch>();
   private loaded = false;
 
@@ -44,28 +72,36 @@ export class EntityIndex {
     }
 
     this.terms = Array.from(termMap.entries())
-      .map(([term, entityId]) => ({ term, entityId }))
+      .map(([term, entityId]) => ({
+        term,
+        entityId,
+        pattern: wholeTokenPattern(term),
+      }))
       .sort((a, b) => b.term.length - a.term.length);
 
     this.loaded = true;
   }
 
+  /**
+   * Detect entities whose name/variant appears in the query as a WHOLE token
+   * (word-boundary match, case-insensitive). Substring hits such as
+   * 'Asa' ⊂ 'pheasant' or 'Al' ⊂ 'talk' can no longer fire. Terms shorter
+   * than 2 characters are skipped entirely: a bare letter or CJK glyph as a
+   * standalone token is degenerate, while two-letter names/initials
+   * ('Al', 'AJ', 'RV') match precisely under word boundaries.
+   */
   detect(query: string): EntityMatch[] {
     if (!this.loaded) return [];
 
     const lowerQuery = query.toLowerCase();
     const detectedIds = new Set<number>();
-    const shortAllowList = new Set(['al', 'jo', 'ty']);
 
     for (const entry of this.terms) {
-      if (
-        entry.term.length < 3 &&
-        !shortAllowList.has(entry.term.toLowerCase())
-      ) {
+      if (entry.term.length < 2) {
         continue;
       }
 
-      if (lowerQuery.includes(entry.term.toLowerCase())) {
+      if (entry.pattern.test(lowerQuery)) {
         detectedIds.add(entry.entityId);
       }
     }

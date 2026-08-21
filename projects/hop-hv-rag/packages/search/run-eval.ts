@@ -1,45 +1,73 @@
-import { join } from 'node:path';
-import { parseArgs } from 'node:util';
-import { createDb } from '@hop-hv-rag/db';
 import { logger } from '@hop-hv-rag/core';
-import { FamilyArchivist } from './src/archivist';
-import {
-  getGenModel,
-  getEmbedModel,
-  getRerankModel,
-  resolveConfig,
-  logModelConfig,
-  parseArgsModelOptions,
-  parseCliToModelConfig,
-} from '@hop-hv-rag/ai';
 
 const EVAL_PROMPTS_PATH = `${import.meta.dir}/eval-prompts.json`;
-const OUTPUT_PATH = `${import.meta.dir}/../../eval-results.md`;
 const DELAY_MS = 2000;
+const CONCURRENCY_LIMIT = 3;
+
+const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3200/api/query';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Parse CLI arguments for model selection
-const { values } = parseArgs({
-  args: Bun.argv.slice(2),
-  options: parseArgsModelOptions,
-  strict: false,
-});
+async function collectQueryResult(prompt: string): Promise<string> {
+  const response = await fetch(SERVER_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: prompt }),
+  });
 
-/**
- * Consume the query async generator and extract the final answer.
- */
-async function collectQueryResult(
-  archivist: FamilyArchivist,
-  prompt: string,
-): Promise<string> {
-  let answer = '';
-  for await (const chunk of archivist.query(prompt)) {
-    if (chunk.type === 'result') {
-      answer = chunk.answer;
+  if (!response.ok) {
+    throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+  }
+  if (!response.body) throw new Error('No response body received');
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalAnswer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const chunk = JSON.parse(line);
+      
+      if (chunk.type === 'result') {
+        finalAnswer = chunk.answer;
+      }
     }
   }
-  return answer;
+
+  return finalAnswer;
+}
+
+/**
+ * Helper function to run an async operation over an array with a concurrency limit.
+ */
+async function asyncMapConcurrent<T, R>(
+  items: T[],
+  limit: number,
+  mapper: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let currentIndex = 0;
+
+  const worker = async () => {
+    while (currentIndex < items.length) {
+      const index = currentIndex++;
+      results[index] = await mapper(items[index]);
+    }
+  };
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
+  await Promise.all(workers);
+  
+  return results;
 }
 
 async function runEval() {
@@ -50,51 +78,30 @@ async function runEval() {
   }
 
   const prompts = await promptsFile.json();
-  let markdown = `# RAG Evaluation Results\n\nGenerated on: ${new Date().toLocaleString()}\n\n`;
 
-  // Resolve model configuration (Zod validates CLI args)
-  const modelConfig = resolveConfig(parseCliToModelConfig(values));
-  logModelConfig(modelConfig);
+  logger.print(`Evaluating against server at: ${SERVER_URL}`);
+  logger.print(`Running with concurrency limit: ${CONCURRENCY_LIMIT}`);
 
-  // Set up services
-  const DATA_DIR = join(import.meta.dir, '../../data');
-  const db = createDb(join(DATA_DIR, 'hv-rag.db'));
-  // Initialize the archivist once
-  const archivist = new FamilyArchivist(
-    getGenModel(modelConfig.generation),
-    getEmbedModel(modelConfig.embedding),
-    getRerankModel(modelConfig.reranking),
-    db,
-  );
-  await archivist.init();
-
-  for (const item of prompts) {
-    logger.print(`\n--- [${item.id}] Starting: ${item.prompt} ---`);
-
+  const processPrompt = async (item: any) => {
+    logger.print(`--- [${item.id}] Starting: ${item.prompt} ---`);
+    
     try {
-      const result = await collectQueryResult(archivist, item.prompt);
-
-      markdown += `## ${item.id}: ${item.category}\n`;
-      markdown += `**Prompt:** ${item.prompt}\n\n`;
-      markdown += `**Expected:** ${item.expected}\n\n`;
-      markdown += `### Result:\n${result}\n\n`;
-      markdown += `---\n\n`;
+      const result = await collectQueryResult(item.prompt);
+      
+      logger.print(`[${item.id}] Finished successfully.`);
+      logger.print(`[${item.id}] Result:\n${result}\n`);
     } catch (error: unknown) {
       logger.error({ error }, `Error running [${item.id}]`);
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      markdown += `## ${item.id}: ${item.category}\n**Error:** ${message}\n\n---\n\n`;
     }
 
-    logger.print(`[${item.id}] Finished.`);
+    // Still add a short delay to ensure VRAM or API rate limits aren't severely hammered
+    await sleep(DELAY_MS); 
+  };
 
-    if (prompts.indexOf(item) < prompts.length - 1) {
-      logger.print(`Waiting ${DELAY_MS}ms for VRAM cleanup...`);
-      await sleep(DELAY_MS);
-    }
-  }
+  // Run the batch
+  await asyncMapConcurrent(prompts, CONCURRENCY_LIMIT, processPrompt);
 
-  await Bun.write(OUTPUT_PATH, markdown);
-  logger.print(`\nEvaluation complete! Results saved to: ${OUTPUT_PATH}`);
+  logger.print(`\nEvaluation complete!`);
 }
 
 runEval().catch((err) => {

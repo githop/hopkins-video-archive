@@ -5,6 +5,12 @@ export interface ArchivistConfig {
   temporalPenalty?: number;
   filenameBoost?: number;
   rrfK?: number;
+  /**
+   * FTS OR-fallback threshold (HANDOFF fix 3): when the implicit-AND MATCH
+   * returns fewer rows than this, the MATCH expression is rebuilt as an OR
+   * of non-stopword tokens. Set to 0 to disable the fallback.
+   */
+  ftsOrFallbackMinResults?: number;
 }
 
 export interface HybridResult {
