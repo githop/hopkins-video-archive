@@ -1,0 +1,22 @@
+{{- /*
+Chat templates are vendored under files/ and served to pods as raw bytes.
+They are emitted as binaryData (base64) rather than data block scalars
+because Helm's manifest pipeline normalizes trailing newlines in literal
+block scalars, which would corrupt templates where trailing whitespace is
+part of the prompt format (e.g. Qwen3-Reranker's assistant <think> prefill).
+The item key must equal the value of models.<name>.chat_template, matching
+the subPath in model-deployment.yaml.
+*/ -}}
+{{- range $name, $model := .Values.models }}
+{{- if $model.chat_template }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chat-template-{{ include "gnarlyvllm.resourceName" $name }}
+  labels:
+    app: vllm-{{ include "gnarlyvllm.resourceName" $name }}
+binaryData:
+  {{ $model.chat_template }}: {{ $.Files.Get (printf "files/%s" $model.chat_template) | b64enc }}
+---
+{{- end }}
+{{- end -}}

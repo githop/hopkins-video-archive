@@ -35,4 +35,5 @@ models:
     gpu_memory_utilization: 0.15
     max_model_len: 4096
     enforce_eager: true
+    chat_template: qwen3-reranker-chat-template.jinja
     hf_overrides: '{"architectures": ["Qwen3ForSequenceClassification"], "classifier_from_token": ["no", "yes"], "is_original_qwen3_reranker": true}'

@@ -54,6 +54,7 @@ models:
     port: 8004
     gpu_memory_utilization: 0.9
     max_model_len: 4096
+    chat_template: qwen3-reranker-chat-template.jinja
     hf_overrides: '{"architectures": ["Qwen3ForSequenceClassification"], "classifier_from_token": ["no", "yes"], "is_original_qwen3_reranker": true}'
 
   chat-qwen3-8b:
@@ -105,6 +106,7 @@ models:
     port: 8007
     gpu_memory_utilization: 0.15
     max_model_len: 4096
+    chat_template: qwen3-reranker-chat-template.jinja
     hf_overrides: '{"architectures": ["Qwen3ForSequenceClassification"], "classifier_from_token": ["no", "yes"], "is_original_qwen3_reranker": true}'
 
   ingest-glm4.7-flash:
